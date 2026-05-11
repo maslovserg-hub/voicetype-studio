@@ -42,7 +42,6 @@ app is already in place):
 
 from __future__ import annotations
 
-import base64
 import os
 import shutil
 import subprocess
@@ -116,9 +115,14 @@ def shortcut_exists() -> bool:
 def create_start_menu_shortcut() -> bool:
     """Create a per-user Start-menu shortcut pointing at the installed exe.
 
-    Uses PowerShell + WScript.Shell — no extra Python deps, works on every
-    Windows 10/11 install. Returns ``True`` on success (or if the shortcut
-    is already there); ``False`` if PowerShell isn't available or refused.
+    Uses ``IShellLinkW`` directly via ``win32com.shell`` — the Unicode
+    variant of the shell-link COM interface. The ANSI wrappers
+    (``WScript.Shell.CreateShortcut`` / PowerShell COM dispatch) fail on
+    Cyrillic paths like ``C:\\Users\\Сергей\\AppData\\...`` with a
+    nondescript ``ArgumentException``.
+
+    Returns ``True`` on success (or when the shortcut already exists);
+    ``False`` when pywin32 isn't available or the COM call fails.
     """
     if sys.platform != "win32":
         return False
@@ -131,36 +135,26 @@ def create_start_menu_shortcut() -> bool:
     os.makedirs(os.path.dirname(shortcut_path), exist_ok=True)
     working_dir = os.path.dirname(EXE_PATH)
 
-    # PowerShell script. Single-quote each path with embedded `'` doubled
-    # to escape — handles Cyrillic paths and the off-chance of apostrophes
-    # in %APPDATA%.
-    def _q(s: str) -> str:
-        return "'" + s.replace("'", "''") + "'"
-
-    ps = (
-        "$ws = New-Object -ComObject WScript.Shell; "
-        f"$s = $ws.CreateShortcut({_q(shortcut_path)}); "
-        f"$s.TargetPath = {_q(EXE_PATH)}; "
-        f"$s.WorkingDirectory = {_q(working_dir)}; "
-        f"$s.IconLocation = {_q(EXE_PATH + ',0')}; "
-        "$s.Description = 'VoiceType Studio'; "
-        "$s.Save()"
-    )
-    # ``-EncodedCommand`` expects UTF-16-LE base64 — bypasses console
-    # codepage issues with non-ASCII paths.
-    encoded = base64.b64encode(ps.encode("utf-16-le")).decode("ascii")
     try:
-        result = subprocess.run(
-            [
-                "powershell", "-NoProfile", "-NonInteractive",
-                "-EncodedCommand", encoded,
-            ],
-            capture_output=True, timeout=15,
-            creationflags=0x08000000,
-        )
-        return result.returncode == 0 and shortcut_exists()
-    except (OSError, subprocess.TimeoutExpired):
+        import pythoncom
+        from win32com.shell import shell as win_shell
+    except ImportError:
         return False
+
+    try:
+        link = pythoncom.CoCreateInstance(
+            win_shell.CLSID_ShellLink, None,
+            pythoncom.CLSCTX_INPROC_SERVER, win_shell.IID_IShellLinkW,
+        )
+        link.SetPath(EXE_PATH)
+        link.SetWorkingDirectory(working_dir)
+        link.SetIconLocation(EXE_PATH, 0)
+        link.SetDescription("VoiceType Studio")
+        persist = link.QueryInterface(pythoncom.IID_IPersistFile)
+        persist.Save(shortcut_path, True)
+    except Exception:
+        return False
+    return shortcut_exists()
 
 
 def model_present(folder: str = GIGAAM_CACHE) -> bool:

@@ -13,7 +13,16 @@ a = Analysis(
     pathex=[],
     binaries=[],
     datas=[],
-    hiddenimports=[],
+    hiddenimports=[
+        # IShellLinkW shortcut creation: WScript.Shell mangles Cyrillic
+        # paths, so we go straight at the Unicode COM interface via
+        # pywin32. These modules aren't picked up automatically because
+        # ``win32com.shell`` uses dynamic imports.
+        'win32com.shell',
+        'win32com.shell.shell',
+        'pythoncom',
+        'pywintypes',
+    ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
