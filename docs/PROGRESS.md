@@ -202,9 +202,45 @@
 
 **Итого 194 теста (189 + 5 новых) passed, 3 skipped.**
 
+## День 2026-05-11 (ночь — GitHub релиз + ffmpeg + history pool + иконки)
+
+**GitHub репо + первый публичный релиз:**
+- Создан https://github.com/maslovserg-hub/voicetype-studio (private → потом public).
+- Релиз `v1.0.0` с двумя ассетами: `VoiceTypeStudio-Setup.exe` (~15 МБ — лаунчер) + `VoiceTypeStudio_release.zip` (~223 МБ — приложение).
+- Single-link установка для знакомых: качаешь setup-exe → он сам тянет zip с `/releases/latest/download/`, ставит в `%APPDATA%\VoiceTypeStudio\`, создаёт ярлык, при необходимости спрашивает про GigaAM модель (см. ниже).
+
+**Launcher iterations (5 раундов):**
+1. **ffmpeg-диалог** — после установки проверка `shutil.which("ffmpeg")`. Если нет — три кнопки: silent winget install (`Gyan.FFmpeg --scope user`, PATH правится in-process) / открыть gyan.dev в браузере / пропустить. Без ffmpeg конвертация видео сломана, поэтому проверка обязательна.
+2. **Flat install layout + `os._exit`** — `EXE_PATH` ожидал двойную вложенность `VoiceTypeStudio/VoiceTypeStudio/`, а zip из `dist/VoiceTypeStudio/*` распаковывал плоско. Плюс `sys.exit()` в Tk-`after`-коллбэке глотается интерпретатором — окно лаунчера висело после успешного `Popen`. Перешёл на плоский путь и `os._exit(0)`.
+3. **Shortcut на каждом запуске** — раньше создание ярлыка происходило только в slow-path (`if not already_installed:` ветка). Если первый запуск падал на сломанном `EXE_PATH`, ярлык не создавался, и на втором запуске fast-path его уже не делал. Теперь `create_start_menu_shortcut()` идемпотентно вызывается в обоих путях.
+4. **`model_present()` per-file thresholds** — тестировал на реальном `C:\gigaam_cache\`: `v3_e2e_ctc_tokenizer.model` весит ~241 КБ (это нормально, токенайзер маленький). Мой порог 1 МБ для обоих файлов отвергал валидные установки. Расширил `MODEL_FILES` до `(name, full_size, min_acceptable)` — ckpt должен быть ≥100 МБ, tokenizer ≥1 КБ.
+5. **Shortcut через `IShellLinkW`, не `WScript.Shell`** — обычный WScript.Shell.CreateShortcut (через PowerShell, pywin32-Dispatch, VBScript — любой путь) использует ANSI-обёртку и падает на путях с кириллицей `C:\Users\Сергей\...` ("Value does not fall within the expected range"). Переход на Unicode-вариант `IShellLinkW` + `IPersistFile.Save()` через `win32com.shell` решил проблему. Launcher вырос с 10.9 МБ до 14.9 МБ (pywin32 в бандле).
+
+**Общая база истории (desktop ↔ bot pool):**
+- `core.history.owner_scope(settings)` возвращает `("desktop", str(whitelist[0]))` — владелец видит пул из десктоп- и tg-записей. Остальные whitelist-участники остаются изолированными — `_scope_for(settings, telegram_id)` отдаёт только их собственный `str(id)`.
+- `history.recent()` и `get_segments()` теперь принимают либо строку (back-compat), либо итерируемый список user_ids. SQL `IN (?...)` плюс `_normalize_scope()` для дедупликации.
+- UI-пометки в обоих интерфейсах: `💻` префикс для записи `user_id="desktop"`, `📱` для всего остального. Пользователь сразу видит откуда транскрипция.
+- 5 новых тестов в `test_history_owner_pool.py` (SQL-плумбинг, sтрангер не видит чужие записи, env vs pointer priority).
+- При сохранении: `bot.handlers.media.handle_*` пишут `str(message.from_user.id)`, `desktop.transcriptor_window._on_done` пишет `"desktop"` — без изменений, разделение источников сохраняется через user_id.
+
+**Иконки + bot welcome photo:**
+- Embedded `assets/icon.ico` в обоих exe через PyInstaller `icon=`. Tk root + все Toplevel наследуют через `iconbitmap(default=...)`. Tray грузит `assets/icon_64.png` через новый `core.assets.load_icon_image()` вместо нарисованного PIL микрофона.
+- `assets/bot.png` отправляется в `/start` как photo с прежним текстом как caption. Bot description (`set_my_short_description` + `set_my_description`) ставится при `start_bot_polling` — видно при первом открытии чата над кнопкой «Старт».
+- 4 раунда итерации по иконке: master транспарент с большим паддингом → iOS-bg вариант (тёмный квадрат — выглядел "boxy" против VS Code) → master без margin → новый пак v2 с пузырём от пользователя. У v2 пакета был near-invisible drop shadow → `getbbox()` врал про 88%×60% fill (реально 42%×41%). Финальный crop делается по `alpha > 30` маске, итог — пузырь занимает 100%×98% канваса.
+- Полезный урок: **`win32api.UpdateResource` не годится для PyInstaller exe** — он обрезает overlay-данные (PKG-архив, который PyInstaller вешает хвостом к бинарю). После такой подмены exe не запускается ("Could not load PyInstaller's embedded PKG archive"). Восстановили копированием свежесобранного exe из `dist/` поверх установленного. Для in-place подмены иконки в будущем нужен `rcedit.exe` (он понимает overlay).
+
+**Cleanup:**
+- Удалена старая программа VoiceType (предыдущий проект): `%APPDATA%\VoiceType\` + ярлык + autostart-запись `HKCU\...\Run\VoiceType`.
+- Удалена битая autostart-запись `VoiceTypeStudio` указывающая на dev-Python (`pythonw.exe main.py`). Если нужна автозагрузка — теперь правильно поставить через галку в Настройках, она пропишет `frozen-exe` путь.
+- Из проекта удалены stray-папки от криво-направленного bash (`Projectsvoicetype-studiovenv/`, `c:Projectsvoicetype-studiotests/`), большая `build/` (170 МБ), и `VoiceTypeStudio_release.zip` (212 МБ — gh release сам его хостит). Все добавлены в `.gitignore`.
+
+**Итого 199 тестов passed, 3 skipped.** Релиз v1.0.0 публичный, knaki может скачать и установить. Сегодняшняя сборка лаунчера и zip — на gh release под тэгом v1.0.0.
+
 ## Что осталось / на завтра
 
 - [ ] **UX-проверка overlay live** — запустить новую сборку, нажать Right-Ctrl, убедиться что индикатор внизу по центру.
 - [ ] **UX-тест Истории вживую** — после рестарта пользователь ещё не успел проверить «История…» в новой версии (с фиксом focus). Вчерашние и сегодняшние транскрипции должны быть в списке.
 - [ ] **Тест других платформ** с новым format+concurrent_fragments — YouTube, VK, Я.Диск, Google Drive. Должны быть быстро.
+- [ ] **Bot avatar через @BotFather** — программно поставить картинку нельзя (Bot API не покрывает). Открыть BotFather → `/mybots` → выбрать бот → Edit Bot → Edit Botpic → загрузить `c:\Projects\voicetype-studio\assets\bot.png`. Один раз, ручной шаг.
+- [ ] **Хотим in-place icon swap без ребилда** — текущая попытка через `win32api.UpdateResource` сломала exe (overlay truncation). Решение — `rcedit.exe` от electron, он умеет с PyInstaller-overlay. Скачать exe ~1 МБ, добавить хелпер скрипт. Сэкономит ~5 мин на каждой итерации по иконке.
 - [ ] **Опционально**: если silero 24k всё равно недостаточно — Edge TTS / OpenAI TTS / ElevenLabs на выбор (см. варианты в чате).
