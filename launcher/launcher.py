@@ -63,12 +63,13 @@ APP_URL = (
 INSTALL_DIR = os.path.join(
     os.environ.get("APPDATA", "C:/VoiceTypeStudio"), "VoiceTypeStudio"
 )
-EXE_PATH = os.path.join(INSTALL_DIR, "VoiceTypeStudio", "VoiceTypeStudio.exe")
+# Flat layout — the zip is built from ``dist/VoiceTypeStudio/*`` and
+# extracted into ``INSTALL_DIR``, so the exe lands one level down, not
+# two. Matching this keeps the path predictable for ``already_installed()``.
+EXE_PATH = os.path.join(INSTALL_DIR, "VoiceTypeStudio.exe")
 # Pointer file the app reads from next to its exe — must match
 # ``core.config._GIGAAM_POINTER_FILE``.
-POINTER_FILE = os.path.join(
-    INSTALL_DIR, "VoiceTypeStudio", "gigaam_cache_path.txt"
-)
+POINTER_FILE = os.path.join(INSTALL_DIR, "gigaam_cache_path.txt")
 
 # GigaAM model — same defaults as ``core.config.AppConfig``. We can't
 # import core/ from the launcher (the app isn't installed yet at this
@@ -264,8 +265,12 @@ def model_resolved() -> bool:
 def launch() -> None:
     # creationflags=DETACHED_PROCESS so the launcher window can close
     # without taking the main app down with it.
+    #
+    # ``os._exit`` instead of ``sys.exit`` because Tkinter swallows
+    # ``SystemExit`` raised from ``after`` callbacks — the launcher
+    # window would otherwise stay open after Popen succeeds.
     subprocess.Popen([EXE_PATH], creationflags=0x00000008)
-    sys.exit(0)
+    os._exit(0)
 
 
 # ---- app install (download + extract zip) -------------------------------

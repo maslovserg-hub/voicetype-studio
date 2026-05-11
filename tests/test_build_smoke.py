@@ -231,10 +231,10 @@ def test_launcher_winget_install_skips_when_missing(monkeypatch) -> None:
 
 
 def test_launcher_install_dir_matches_main_bundle_name() -> None:
-    """Launcher unpacks the zip into INSTALL_DIR; the zip is expected to
-    contain a top-level ``VoiceTypeStudio/`` folder produced by the main
-    spec's ``COLLECT(name='VoiceTypeStudio')``. EXE_PATH must therefore
-    point at ``<INSTALL_DIR>/VoiceTypeStudio/VoiceTypeStudio.exe``."""
+    """Launcher extracts the zip's contents directly into INSTALL_DIR
+    (the zip is built from ``dist/VoiceTypeStudio/*``, no wrapping
+    folder). EXE_PATH must therefore point at
+    ``<INSTALL_DIR>/VoiceTypeStudio.exe`` — one level, not two."""
     import importlib.util
 
     spec = importlib.util.spec_from_file_location("launcher_mod", LAUNCHER_PY)
@@ -243,7 +243,7 @@ def test_launcher_install_dir_matches_main_bundle_name() -> None:
 
     assert mod.EXE_PATH.startswith(mod.INSTALL_DIR)
     rel = mod.EXE_PATH[len(mod.INSTALL_DIR):].lstrip("\\/").replace("\\", "/")
-    assert rel == "VoiceTypeStudio/VoiceTypeStudio.exe", rel
+    assert rel == "VoiceTypeStudio.exe", rel
 
 
 def test_launcher_app_url_is_https_release() -> None:
