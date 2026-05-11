@@ -548,8 +548,13 @@ def _show_model_dialog(win: tk.Tk, set_progress, status_var, on_done) -> None:
 
 
 def run_installer() -> None:
-    # Fast path: app + model already in place — just launch.
+    # Fast path: app + model already in place — just launch. Still
+    # make sure the Start-menu shortcut is there: ``create_...`` is
+    # a no-op when ``shortcut_exists()`` returns True, so calling
+    # it on every launch is cheap and catches users whose first run
+    # raced past shortcut creation (e.g., an earlier broken build).
     if already_installed() and model_resolved():
+        create_start_menu_shortcut()
         launch()
 
     win = tk.Tk()
