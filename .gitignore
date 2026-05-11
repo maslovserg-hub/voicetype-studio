@@ -37,6 +37,11 @@ transcriber_bot_robot_windows_ios_icon_package.zip
 # User-dropped bot avatar — canonical copy is in assets/bot.png
 /Bot.png
 
+# User-dropped icon master + v2 pack — canonical copies are in assets/
+/icon.png
+_icon_pack_v2/
+transcriber_bot_icon_pack_windows_macos.zip
+
 # Runtime data
 data/
 tmp/
