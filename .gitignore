@@ -28,6 +28,9 @@ c:Projectsvoicetype-studiotests/
 # PyInstaller build log — regenerated on every build
 build.log
 
+# Local release artefact — published via gh release, not git
+VoiceTypeStudio_release.zip
+
 # Runtime data
 data/
 tmp/

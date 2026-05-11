@@ -8,9 +8,20 @@ ship the launcher as the user-facing exe. Launcher → GitHub Releases zip
 If the install dir already contains the exe, the launcher detects it and
 just re-launches without touching the network.
 
-Two extra phases run after install (or before launch when re-running):
+Three extra phases run after install (skipped on subsequent runs when the
+app is already in place):
 
-1. Model check — looks for GigaAM ``v3_e2e_ctc.ckpt`` in ``C:/gigaam_cache``.
+1. FFmpeg check — pydub and yt-dlp shell out to ``ffmpeg`` for every
+   non-WAV input. If it's not on PATH we offer:
+
+   - **Установить (winget)** — silent ``winget install Gyan.FFmpeg``
+     scoped to the user; PATH is spliced in-process so the launched app
+     sees it without a reboot.
+   - **Скачать вручную** — opens gyan.dev in a browser.
+   - **Пропустить** — launch anyway; convert will fail at runtime with a
+     clearer error than a mysterious silent crash.
+
+2. Model check — looks for GigaAM ``v3_e2e_ctc.ckpt`` in ``C:/gigaam_cache``.
    Missing? Show a dialog with three options:
 
    - **Указать папку** — user points to an existing folder containing the
@@ -24,12 +35,16 @@ Two extra phases run after install (or before launch when re-running):
    This mirrors the first-run wizard from the old ``my-voice-assistent``
    but keeps the choice in the launcher so the main app starts cold and
    fast.
+
+3. Start-menu shortcut — best-effort ``.lnk`` drop into the per-user
+   Start menu via PowerShell + ``WScript.Shell`` (no pywin32 dep).
 """
 
 from __future__ import annotations
 
 import base64
 import os
+import shutil
 import subprocess
 import sys
 import threading
@@ -37,6 +52,7 @@ import time
 import tkinter as tk
 import tkinter.filedialog as fd
 import urllib.request as ur
+import webbrowser
 import zipfile
 
 # TODO(release): point this at the real GitHub Releases asset before publish.
@@ -155,6 +171,67 @@ def model_present(folder: str = GIGAAM_CACHE) -> bool:
         if not (os.path.isfile(fp) and os.path.getsize(fp) > 1_000_000):
             return False
     return True
+
+
+def ffmpeg_available() -> bool:
+    """True if ``ffmpeg`` is reachable on PATH.
+
+    The Studio's audio pipeline (pydub + yt-dlp post-processors) shells
+    out to ``ffmpeg``; without it transcription falls over for every
+    file that isn't already 16 kHz mono WAV.
+    """
+    return shutil.which("ffmpeg") is not None
+
+
+def install_ffmpeg_via_winget(timeout_s: int = 600) -> bool:
+    """Run ``winget install Gyan.FFmpeg`` silently. Returns ``True`` if
+    winget exited cleanly AND ffmpeg is now on PATH.
+
+    User-scope install — no admin prompt on Windows 10 1809+ with App
+    Installer. Returns ``False`` on any failure (no winget, network
+    issue, user declined UAC, etc.). PATH is refreshed by re-checking
+    via :func:`shutil.which`, which reads the live environment.
+    """
+    if sys.platform != "win32":
+        return False
+    if shutil.which("winget") is None:
+        return False
+    try:
+        # ``--silent`` skips installer prompts; the source/agreement
+        # flags suppress the "do you accept the MS Store TOS?" dialog
+        # that otherwise blocks a non-interactive run.
+        result = subprocess.run(
+            [
+                "winget", "install", "--id", "Gyan.FFmpeg",
+                "--silent",
+                "--accept-source-agreements",
+                "--accept-package-agreements",
+                "--scope", "user",
+            ],
+            capture_output=True, timeout=timeout_s,
+            creationflags=0x08000000,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    if result.returncode != 0:
+        return False
+    # winget updates PATH in the installer's environment, but our
+    # already-running process inherited the old PATH. Look in the
+    # well-known install dir as a fallback.
+    if ffmpeg_available():
+        return True
+    winget_dir = os.path.join(
+        os.environ.get("LOCALAPPDATA", ""),
+        "Microsoft", "WinGet", "Packages",
+    )
+    if os.path.isdir(winget_dir):
+        for root, _dirs, files in os.walk(winget_dir):
+            if "ffmpeg.exe" in files:
+                # Splice the bin dir into our process PATH so the model
+                # check and the launched app see it without a reboot.
+                os.environ["PATH"] = root + os.pathsep + os.environ.get("PATH", "")
+                return True
+    return False
 
 
 def _pointer_folder() -> str | None:
@@ -308,6 +385,82 @@ def _download_model(set_progress, status_var, win: tk.Tk) -> bool:
 # ---- UI flow ------------------------------------------------------------
 
 
+def _show_ffmpeg_dialog(win: tk.Tk, set_progress, status_var, on_done) -> None:
+    """Ask the user how to provide ffmpeg. Three buttons: auto-install via
+    winget, open the gyan.dev download page in a browser, or skip.
+
+    Skip is non-fatal — the app launches normally, but transcribing
+    anything but a 16 kHz mono WAV will error at convert time."""
+    for w in win.winfo_children():
+        if getattr(w, "_persistent", False):
+            continue
+        w.destroy()
+
+    status_var.set(
+        "Для конвертации видео и аудио нужен FFmpeg. Не нашли его в PATH."
+    )
+    set_progress(0.0, status_var.get())
+
+    btn_frame = tk.Frame(win, bg=BG)
+    btn_frame.pack(pady=10)
+    btn_style = dict(
+        font=("Segoe UI", 10), relief="flat",
+        padx=12, pady=6, cursor="hand2",
+    )
+
+    def _disable_all() -> None:
+        for w in btn_frame.winfo_children():
+            try:
+                w.configure(state="disabled")
+            except tk.TclError:
+                pass
+
+    def _on_winget() -> None:
+        _disable_all()
+
+        def _do() -> None:
+            win.after(0, status_var.set, "Устанавливаю FFmpeg через winget…")
+            win.after(0, set_progress, 0.3, "Устанавливаю FFmpeg через winget…")
+            ok = install_ffmpeg_via_winget()
+            if ok:
+                win.after(0, set_progress, 1.0, "FFmpeg установлен.")
+                win.after(500, on_done)
+            else:
+                win.after(0, status_var.set,
+                          "Не удалось установить через winget. Попробуйте «Скачать вручную».")
+                win.after(0, lambda: [
+                    w.configure(state="normal") for w in btn_frame.winfo_children()
+                ])
+
+        threading.Thread(target=_do, daemon=True).start()
+
+    def _on_browser() -> None:
+        webbrowser.open("https://www.gyan.dev/ffmpeg/builds/")
+        status_var.set(
+            "Скачайте ffmpeg-release-essentials.zip, "
+            "распакуйте и добавьте папку bin в PATH. Потом нажмите «Пропустить»."
+        )
+
+    def _on_skip() -> None:
+        on_done()
+
+    tk.Button(
+        btn_frame, text="Установить (winget)", bg=ACC, fg=WHITE,
+        activebackground=PILL, activeforeground=WHITE,
+        command=_on_winget, **btn_style,
+    ).pack(side="left", padx=4)
+    tk.Button(
+        btn_frame, text="Скачать вручную", bg=PILL, fg=WHITE,
+        activebackground=ACC, activeforeground=WHITE,
+        command=_on_browser, **btn_style,
+    ).pack(side="left", padx=4)
+    tk.Button(
+        btn_frame, text="Пропустить", bg=BG, fg=GRAY,
+        activebackground=PILL, activeforeground=WHITE,
+        command=_on_skip, **btn_style,
+    ).pack(side="left", padx=4)
+
+
 def _show_model_dialog(win: tk.Tk, set_progress, status_var, on_done) -> None:
     """Swap the install screen into a 3-button "what to do about the
     model?" picker. Calls ``on_done()`` when the user has either resolved
@@ -429,13 +582,19 @@ def run_installer() -> None:
         set_progress(1.0, "Готово! Запускаю…")
         win.after(600, launch)
 
-    def _after_app_installed() -> None:
+    def _model_phase() -> None:
         if model_resolved():
             _on_model_done()
         else:
             _show_model_dialog(win, set_progress, status_var, _on_model_done)
 
-    def _install_app_then_model() -> None:
+    def _ffmpeg_phase() -> None:
+        if ffmpeg_available():
+            _model_phase()
+        else:
+            _show_ffmpeg_dialog(win, set_progress, status_var, _model_phase)
+
+    def _install_app() -> None:
         try:
             if not already_installed():
                 _download_app_zip(set_progress, status_var, win)
@@ -443,11 +602,11 @@ def run_installer() -> None:
             # (no PowerShell, locked profile, etc.) shouldn't block launch.
             if not shortcut_exists():
                 create_start_menu_shortcut()
-            win.after(0, _after_app_installed)
+            win.after(0, _ffmpeg_phase)
         except Exception as exc:
             win.after(0, status_var.set, f"Ошибка: {exc}")
 
-    threading.Thread(target=_install_app_then_model, daemon=True).start()
+    threading.Thread(target=_install_app, daemon=True).start()
     win.mainloop()
 
 

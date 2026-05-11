@@ -117,6 +117,8 @@ def test_launcher_module_imports_and_has_helpers() -> None:
         "model_resolved",
         "create_start_menu_shortcut",
         "shortcut_exists",
+        "ffmpeg_available",
+        "install_ffmpeg_via_winget",
     ):
         assert callable(getattr(mod, name)), f"launcher.{name} missing or not callable"
     assert mod.INSTALL_DIR
@@ -171,6 +173,44 @@ def test_launcher_start_menu_shortcut_path() -> None:
     assert path.endswith("VoiceType Studio.lnk")
     # Must land inside the per-user Start menu, not all-users.
     assert "Start Menu" in path
+
+
+def test_launcher_ffmpeg_available_reads_path(monkeypatch) -> None:
+    """``ffmpeg_available()`` is a thin wrapper over ``shutil.which``;
+    monkeypatching ``shutil.which`` should flip the result."""
+    import importlib.util
+    import shutil
+
+    spec = importlib.util.spec_from_file_location("launcher_mod", LAUNCHER_PY)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    monkeypatch.setattr(shutil, "which", lambda name: None)
+    assert mod.ffmpeg_available() is False
+
+    monkeypatch.setattr(shutil, "which", lambda name: "C:/fake/ffmpeg.exe")
+    assert mod.ffmpeg_available() is True
+
+
+def test_launcher_winget_install_skips_when_missing(monkeypatch) -> None:
+    """If winget isn't on PATH, ``install_ffmpeg_via_winget`` must return
+    False *without* attempting a subprocess call (otherwise a missing
+    winget would raise FileNotFoundError on older Windows)."""
+    import importlib.util
+    import shutil
+    import subprocess
+
+    spec = importlib.util.spec_from_file_location("launcher_mod", LAUNCHER_PY)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    monkeypatch.setattr(shutil, "which", lambda name: None)
+
+    def _boom(*args, **kwargs):
+        raise AssertionError("subprocess.run must not be called when winget is missing")
+
+    monkeypatch.setattr(subprocess, "run", _boom)
+    assert mod.install_ffmpeg_via_winget() is False
 
 
 def test_launcher_install_dir_matches_main_bundle_name() -> None:
