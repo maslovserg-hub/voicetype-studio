@@ -1,0 +1,57 @@
+# Secrets / settings
+.env
+.env.local
+settings.json
+*.key
+*.pem
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+.venv/
+venv/
+env/
+ENV/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Stray venv copies from misdirected shell commands during dev
+Projectsvoicetype-studiovenv/
+c:Projectsvoicetype-studiotests/
+
+# PyInstaller build log — regenerated on every build
+build.log
+
+# Runtime data
+data/
+tmp/
+logs/
+*.log
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Models (lazy-downloaded, must NOT be committed)
+*.ckpt
+*.pt
+*.bin
+*.safetensors
+
+# IDE
+.vscode/
+.idea/
+.claude/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini

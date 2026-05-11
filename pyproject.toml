@@ -1,0 +1,5 @@
+[tool.pytest.ini_options]
+markers = [
+    "live: hits a real provider API; skipped unless its API key env var is set",
+]
+asyncio_mode = "strict"

@@ -1,0 +1,39 @@
+# Telegram bot
+aiogram>=3.4
+python-dotenv>=1.0
+
+# ASR
+gigaam @ git+https://github.com/salute-developers/GigaAM.git
+torch>=2.0.0
+torchaudio>=2.0.0
+
+# Audio processing
+pydub>=0.25.1
+sounddevice>=0.4.6
+
+# Downloads
+yt-dlp>=2024.1.1
+yt-dlp-ejs>=0.8.0      # JS solver for YouTube n-sig challenge (needs node.js in PATH)
+aiohttp>=3.9.0
+aiofiles>=23.2.1
+
+# Cookie extraction (auto-grab YouTube/RuTube/etc. cookies from the user's
+# Chromium-based browsers) — for AES-GCM decryption of v10/v11 cookies.
+pywin32>=306
+pycryptodome>=3.18
+
+# Desktop / tray / hotkey
+pynput>=1.7.6
+pystray>=0.19.5
+Pillow>=10.0.0
+
+# UI
+customtkinter>=5.2.0
+tkinterdnd2>=0.4.0
+
+# Utilities
+pyperclip>=1.8.2
+
+# Optional: longform mode (transcribe_longform with pyannote VAD)
+# Uncomment + set HF_TOKEN if you want it:
+# pyannote.audio>=3.1.0
