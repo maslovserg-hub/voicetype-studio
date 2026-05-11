@@ -77,9 +77,13 @@ POINTER_FILE = os.path.join(
 GIGAAM_CACHE = "C:/gigaam_cache"
 MODEL_NAME = "v3_e2e_ctc"
 MODEL_CDN = "https://cdn.chatwm.opensmodel.sberdevices.ru/GigaAM"
+# Each entry: (filename, full-download size in bytes, minimum acceptable
+# size for "looks valid" check). The CDN tokenizer is ~240 KB — the
+# 1 MB threshold I used at first rejected genuine installs, so we
+# split the validation thresholds per file.
 MODEL_FILES = [
-    (f"{MODEL_NAME}.ckpt", 422 * 1024 * 1024),
-    (f"{MODEL_NAME}_tokenizer.model", 1 * 1024 * 1024),
+    (f"{MODEL_NAME}.ckpt",            422 * 1024 * 1024, 100 * 1024 * 1024),
+    (f"{MODEL_NAME}_tokenizer.model",   1 * 1024 * 1024,             1024),
 ]
 
 BG, ACC, WHITE, GRAY, PILL = (
@@ -161,14 +165,14 @@ def create_start_menu_shortcut() -> bool:
 def model_present(folder: str = GIGAAM_CACHE) -> bool:
     """True if both GigaAM files exist in ``folder`` at plausible sizes.
 
-    Size threshold catches half-downloaded ckpts (a few KB) which
-    ``gigaam.load_model`` would happily try to load and then crash.
+    Per-file minimums catch half-downloaded checkpoints that
+    ``gigaam.load_model`` would happily try to load and then crash on.
+    The tokenizer is genuinely small (~240 КБ) so its threshold is
+    relaxed.
     """
-    for fname, _ in MODEL_FILES:
+    for fname, _, fmin in MODEL_FILES:
         fp = os.path.join(folder, fname)
-        # 1 MB threshold catches half-downloaded ckpts (a few KB) that
-        # ``gigaam.load_model`` would happily try to load and then crash.
-        if not (os.path.isfile(fp) and os.path.getsize(fp) > 1_000_000):
+        if not (os.path.isfile(fp) and os.path.getsize(fp) >= fmin):
             return False
     return True
 
@@ -330,10 +334,10 @@ def _point_at_model_folder(src_folder: str) -> bool:
 def _download_model(set_progress, status_var, win: tk.Tk) -> bool:
     """Download GigaAM files from the Sber CDN. Returns success."""
     os.makedirs(GIGAAM_CACHE, exist_ok=True)
-    total_bytes = sum(fsize for _, fsize in MODEL_FILES)
+    total_bytes = sum(fsize for _, fsize, _ in MODEL_FILES)
     downloaded_so_far = 0
 
-    for fname, fsize in MODEL_FILES:
+    for fname, fsize, _ in MODEL_FILES:
         dest = os.path.join(GIGAAM_CACHE, fname)
         if os.path.isfile(dest) and os.path.getsize(dest) >= fsize * 0.99:
             downloaded_so_far += fsize

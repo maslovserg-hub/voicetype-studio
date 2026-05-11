@@ -150,16 +150,33 @@ def test_launcher_model_present_requires_both_files(tmp_path) -> None:
     folder = tmp_path / "gigaam"
     folder.mkdir()
     # Tokenizer only — should still report False.
-    (folder / "v3_e2e_ctc_tokenizer.model").write_bytes(b"x" * 2_000_000)
+    (folder / "v3_e2e_ctc_tokenizer.model").write_bytes(b"x" * 250_000)
     assert mod.model_present(str(folder)) is False
 
-    # Add the ckpt at plausible size — now True.
-    (folder / "v3_e2e_ctc.ckpt").write_bytes(b"x" * 2_000_000)
+    # Add the ckpt at plausible size (>= 100 MB minimum) — now True.
+    (folder / "v3_e2e_ctc.ckpt").write_bytes(b"x" * (110 * 1024 * 1024))
     assert mod.model_present(str(folder)) is True
 
-    # Truncate the ckpt below the 1 MB threshold — half-download case.
+    # Truncate the ckpt below the 100 MB threshold — half-download case.
     (folder / "v3_e2e_ctc.ckpt").write_bytes(b"x" * 1024)
     assert mod.model_present(str(folder)) is False
+
+
+def test_launcher_model_present_accepts_small_tokenizer(tmp_path) -> None:
+    """The CDN tokenizer is genuinely ~240 KB. The old 1 MB threshold
+    rejected real, complete installs — guard against that regression."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("launcher_mod", LAUNCHER_PY)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    folder = tmp_path / "gigaam"
+    folder.mkdir()
+    (folder / "v3_e2e_ctc.ckpt").write_bytes(b"x" * (110 * 1024 * 1024))
+    # Real tokenizer is ~240 KB — must accept it.
+    (folder / "v3_e2e_ctc_tokenizer.model").write_bytes(b"x" * 240_941)
+    assert mod.model_present(str(folder)) is True
 
 
 def test_launcher_start_menu_shortcut_path() -> None:
