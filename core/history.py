@@ -15,7 +15,9 @@ import logging
 import sqlite3
 from contextlib import closing
 from datetime import datetime
-from typing import List, Optional
+from typing import Iterable, List, Optional, Union
+
+UserScope = Union[str, Iterable[str]]
 
 from .config import config
 from .transcriber import Segment, Word
@@ -72,27 +74,64 @@ def add(user_id: str, source_label: str, source: str, segments: List[Segment]) -
         return new_id
 
 
-def recent(user_id: str, limit: int = 10) -> List[dict]:
+def _normalize_scope(scope: UserScope) -> tuple[str, ...]:
+    """Accept either a single ``user_id`` (back-compat) or an iterable of them
+    (owner-mode where desktop + a Telegram id share a view) and return a
+    deduplicated tuple safe for parameter substitution."""
+    if isinstance(scope, str):
+        return (scope,) if scope else ()
+    seen: list[str] = []
+    for u in scope:
+        if u and u not in seen:
+            seen.append(u)
+    return tuple(seen)
+
+
+def recent(scope: UserScope, limit: int = 10) -> List[dict]:
+    """Return up to ``limit`` most recent history rows visible to ``scope``.
+
+    ``scope`` may be a single ``user_id`` or an iterable of ids — pass
+    ``["desktop", str(telegram_id)]`` for an owner view that pools desktop
+    and personal bot history together.
+    """
+    ids = _normalize_scope(scope)
+    if not ids:
+        return []
+    placeholders = ",".join("?" * len(ids))
     with closing(_connect()) as conn:
         rows = conn.execute(
-            """SELECT id, source_label, source, created_at
-               FROM transcriptions
-               WHERE user_id = ?
-               ORDER BY id DESC
-               LIMIT ?""",
-            (user_id, limit),
+            f"""SELECT id, user_id, source_label, source, created_at
+                FROM transcriptions
+                WHERE user_id IN ({placeholders})
+                ORDER BY id DESC
+                LIMIT ?""",
+            (*ids, limit),
         ).fetchall()
     return [
-        {"id": r[0], "label": r[1], "source": r[2], "created_at": r[3]} for r in rows
+        {
+            "id": r[0],
+            "user_id": r[1],
+            "label": r[2],
+            "source": r[3],
+            "created_at": r[4],
+        }
+        for r in rows
     ]
 
 
-def get_segments(transcript_id: int, user_id: str) -> Optional[List[Segment]]:
-    """Return segments for the given history row, only if it belongs to user_id."""
+def get_segments(transcript_id: int, scope: UserScope) -> Optional[List[Segment]]:
+    """Return segments for the given history row, only if it belongs to one
+    of the user-ids in ``scope`` (or matches ``scope`` directly when a single
+    string is passed)."""
+    ids = _normalize_scope(scope)
+    if not ids:
+        return None
+    placeholders = ",".join("?" * len(ids))
     with closing(_connect()) as conn:
         row = conn.execute(
-            "SELECT segments_json FROM transcriptions WHERE id = ? AND user_id = ?",
-            (transcript_id, user_id),
+            f"SELECT segments_json FROM transcriptions "
+            f"WHERE id = ? AND user_id IN ({placeholders})",
+            (transcript_id, *ids),
         ).fetchone()
     if not row:
         return None
@@ -102,6 +141,28 @@ def get_segments(transcript_id: int, user_id: str) -> Optional[List[Segment]]:
     except Exception:
         logger.exception("Failed to deserialize history row %d", transcript_id)
         return None
+
+
+def owner_scope(settings) -> tuple[str, ...]:
+    """Build the "owner view" history scope from a :class:`core.Settings`.
+
+    ``whitelist_ids[0]`` is treated as the desktop user's Telegram id —
+    pooling their bot history with the local ``"desktop"`` rows. Other
+    whitelist members stay isolated and only see their own messages.
+    Returns at least ``("desktop",)`` so the desktop UI always has its
+    own rows even when no Telegram is configured.
+    """
+    ids: list[str] = ["desktop"]
+    wl = getattr(settings, "whitelist_ids", None) or []
+    if wl:
+        ids.append(str(wl[0]))
+    return tuple(ids)
+
+
+def is_owner(settings, telegram_id: int) -> bool:
+    """True if ``telegram_id`` is the configured owner (first whitelist id)."""
+    wl = getattr(settings, "whitelist_ids", None) or []
+    return bool(wl) and int(wl[0]) == int(telegram_id)
 
 
 def _seg_to_dict(s: Segment) -> dict:

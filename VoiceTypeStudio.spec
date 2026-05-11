@@ -16,7 +16,14 @@ silero v4_ru (~50 MB) which lands under ``%APPDATA%\\VoiceTypeStudio\\silero``.
 from PyInstaller.utils.hooks import collect_all
 
 
-datas = []
+datas = [
+    # Bundled robot icon — same .ico drives the exe and every Tk window.
+    ('assets/icon.ico', 'assets'),
+    ('assets/icon_64.png', 'assets'),
+    ('assets/icon_256.png', 'assets'),
+    # Bot welcome photo — sent on /start in Telegram.
+    ('assets/bot.png', 'assets'),
+]
 binaries = []
 hiddenimports = [
     # pystray's Windows backend isn't auto-discovered.
@@ -106,6 +113,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon='assets/icon.ico',
 )
 
 coll = COLLECT(

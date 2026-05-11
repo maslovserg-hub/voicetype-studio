@@ -35,10 +35,27 @@ def test_format_history_label_missing_date() -> None:
         "label": "🔗 YouTube",
         "source": "https://youtu.be/x",
         "created_at": "",
+        "user_id": "desktop",
     })
-    # No date → just the label survives.
+    # No date → just the label survives, with a source glyph (💻 here).
     assert "YouTube" in label
-    assert label.strip() == "🔗 YouTube"
+    assert label.strip() == "💻 🔗 YouTube"
+
+
+def test_format_history_label_uses_phone_glyph_for_telegram_rows() -> None:
+    """Rows that originated in the bot (non-"desktop" user_id) should be
+    flagged with 📱 — owners need to tell their two views apart."""
+    from desktop.history_window import format_history_label
+
+    label = format_history_label({
+        "id": 7,
+        "label": "🎤 voice.ogg",
+        "source": "tg",
+        "created_at": "2026-05-11T19:00:00",
+        "user_id": "123456789",
+    })
+    assert "📱" in label
+    assert "voice.ogg" in label
 
 
 def test_format_history_label_malformed_date_falls_through() -> None:
@@ -82,8 +99,25 @@ def test_history_window_module_imports() -> None:
 def test_history_window_constants() -> None:
     from desktop.history_window import HistoryWindow
 
-    assert HistoryWindow.USER_ID == "desktop"
     assert HistoryWindow.LIMIT > 0
+
+
+def test_owner_scope_pools_desktop_with_first_whitelist_id() -> None:
+    """The desktop sees both its own rows and the owner's bot rows. The
+    owner is the first entry in ``whitelist_ids`` — extra ids stay
+    isolated so multi-user installs keep privacy."""
+    from core import Settings
+    from core.history import owner_scope
+
+    empty = Settings(whitelist_ids=[])
+    assert owner_scope(empty) == ("desktop",)
+
+    one = Settings(whitelist_ids=[123])
+    assert owner_scope(one) == ("desktop", "123")
+
+    many = Settings(whitelist_ids=[123, 456, 789])
+    # Only whitelist[0] is the owner; the others stay private.
+    assert owner_scope(many) == ("desktop", "123")
 
 
 def test_history_window_has_refresh() -> None:

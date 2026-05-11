@@ -31,6 +31,12 @@ build.log
 # Local release artefact — published via gh release, not git
 VoiceTypeStudio_release.zip
 
+# User-provided icon source bundle — extracted into assets/ already
+_icon_pkg/
+transcriber_bot_robot_windows_ios_icon_package.zip
+# User-dropped bot avatar — canonical copy is in assets/bot.png
+/Bot.png
+
 # Runtime data
 data/
 tmp/

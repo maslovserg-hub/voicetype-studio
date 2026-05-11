@@ -42,6 +42,23 @@ BOT_COMMANDS = [
     BotCommand(command="status", description="📊 Статус обработки"),
 ]
 
+# Telegram limits: short ≤ 120 chars, full ≤ 512 chars. Cyrillic counted
+# as one char each — same alphabet budget as Latin.
+BOT_SHORT_DESCRIPTION = (
+    "🎙 Расшифрую аудио, видео и ссылки в текст. "
+    "YouTube/RuTube/голосовые/файлы — 8 форматов вывода."
+)
+BOT_DESCRIPTION = (
+    "🎙 Расшифрую аудио, видео и ссылки в текст.\n\n"
+    "Что присылать:\n"
+    "• голосовые, кружочки, аудио и видео файлы\n"
+    "• ссылки: YouTube, RuTube, VK, Я.Диск, Google Drive\n\n"
+    "Что получишь (выбор кнопкой):\n"
+    "📝 текст · ⏱ тайм-коды · 📺 SRT\n"
+    "📋 тезисы · 📚 разделы · 🎭 роли · ❓ вопросы · 🔊 озвучка\n\n"
+    "Нажми «Старт» чтобы начать."
+)
+
 
 # Module-level state — one bot per process.
 _bot: Optional[Bot] = None
@@ -98,6 +115,18 @@ async def start_bot_polling(
         await _bot.set_my_commands(BOT_COMMANDS)
     except Exception:
         logger.exception("set_my_commands failed (continuing anyway)")
+
+    # Bot profile: "About" line + the longer description shown above the
+    # /start button on a fresh chat. Telegram silently rate-limits these
+    # if called too often — best-effort, log on failure.
+    try:
+        await _bot.set_my_short_description(BOT_SHORT_DESCRIPTION)
+    except Exception:
+        logger.exception("set_my_short_description failed (continuing)")
+    try:
+        await _bot.set_my_description(BOT_DESCRIPTION)
+    except Exception:
+        logger.exception("set_my_description failed (continuing)")
 
     # ``handle_signals=False`` is mandatory off the main thread — aiogram
     # would otherwise crash trying to register SIGINT.

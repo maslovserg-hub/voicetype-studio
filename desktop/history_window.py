@@ -19,7 +19,8 @@ from typing import Callable, Optional
 
 import customtkinter as ctk
 
-from core import Segment, history
+from core import Segment, Settings, history
+from core.history import owner_scope
 
 logger = logging.getLogger(__name__)
 
@@ -27,8 +28,11 @@ logger = logging.getLogger(__name__)
 def format_history_label(row: dict) -> str:
     """One human-readable line per history row.
 
-    Example: ``"2026-05-11 18:42  ·  📎 audio.mp3"``. Bad/missing dates
-    fall through as the raw string so we never lose the source label.
+    Example: ``"2026-05-11 18:42  ·  💻 audio.mp3"``. The leading glyph
+    distinguishes rows made on the desktop (💻) from those sent through
+    the Telegram bot (📱) when the two views are pooled. Bad/missing
+    dates fall through as the raw string so we never lose the source
+    label.
     """
     raw = (row.get("created_at") or "").strip()
     pretty = raw
@@ -38,7 +42,9 @@ def format_history_label(row: dict) -> str:
             pretty = dt.strftime("%Y-%m-%d %H:%M")
         except ValueError:
             pass
-    label = (row.get("label") or "").strip() or "(без названия)"
+    base_label = (row.get("label") or "").strip() or "(без названия)"
+    glyph = "💻" if row.get("user_id") == "desktop" else "📱"
+    label = f"{glyph} {base_label}"
     if pretty:
         return f"{pretty}  ·  {label}"
     return label
@@ -47,7 +53,6 @@ def format_history_label(row: dict) -> str:
 class HistoryWindow(ctk.CTkToplevel):
     """Shows recent transcriptions; click → ``on_open(row, segments)``."""
 
-    USER_ID = "desktop"
     LIMIT = 50
 
     def __init__(
@@ -55,6 +60,7 @@ class HistoryWindow(ctk.CTkToplevel):
         master,
         *,
         on_open: Callable[[dict, list[Segment]], None],
+        settings: Optional[Settings] = None,
     ):
         super().__init__(master)
         self.title("VoiceType Studio — История")
@@ -62,6 +68,13 @@ class HistoryWindow(ctk.CTkToplevel):
         self.minsize(480, 320)
 
         self._on_open = on_open
+        # Owner-scope pools desktop rows with the first whitelist tg-id,
+        # so the desktop list also shows what was sent to the bot. When
+        # no settings are available (older callers / tests), fall back
+        # to desktop-only.
+        self._scope: tuple[str, ...] = (
+            owner_scope(settings) if settings is not None else ("desktop",)
+        )
         self._row_buttons: list[ctk.CTkButton] = []
 
         # --- top bar ------------------------------------------------
@@ -109,7 +122,7 @@ class HistoryWindow(ctk.CTkToplevel):
             pass
 
         try:
-            rows = history.recent(self.USER_ID, limit=self.LIMIT)
+            rows = history.recent(self._scope, limit=self.LIMIT)
         except Exception:
             logger.exception("Failed to load history")
             rows = []
@@ -136,7 +149,7 @@ class HistoryWindow(ctk.CTkToplevel):
         if row_id is None:
             return
         try:
-            segments = history.get_segments(int(row_id), self.USER_ID)
+            segments = history.get_segments(int(row_id), self._scope)
         except Exception:
             logger.exception("Failed to load segments for history id=%s", row_id)
             return
@@ -171,9 +184,10 @@ def open_history_window(
     master,
     *,
     on_open: Callable[[dict, list[Segment]], None],
+    settings: Optional[Settings] = None,
 ) -> HistoryWindow:
     """Construct, raise to the front and return the window."""
-    win = HistoryWindow(master, on_open=on_open)
+    win = HistoryWindow(master, on_open=on_open, settings=settings)
 
     # CTkToplevel schedules its own ``after(...)`` to grab focus shortly
     # after construction; calling ``focus_force()`` synchronously here

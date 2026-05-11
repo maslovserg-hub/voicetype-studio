@@ -20,15 +20,22 @@ logger = logging.getLogger(__name__)
 
 
 def _make_icon_image():
+    """Load the bundled robot icon for the tray. Falls back to a hand-
+    drawn microphone if the assets aren't available (e.g., running from
+    source with ``assets/`` missing).
+    """
+    from core.assets import load_icon_image
+
+    bundled = load_icon_image(64)
+    if bundled is not None:
+        return bundled
+
     from PIL import Image, ImageDraw
 
     img = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
-    # Dark circle background (matches Voice Type's existing icon).
     d.ellipse([2, 2, 62, 62], fill="#1e1e35")
-    # Microphone body — accent orange.
     d.rounded_rectangle([22, 8, 42, 38], radius=10, fill="#e05a00")
-    # Stand: arc + post + base.
     d.arc([14, 24, 50, 50], start=0, end=180, fill="#e05a00", width=3)
     d.line([32, 50, 32, 58], fill="#e05a00", width=3)
     d.line([24, 58, 40, 58], fill="#e05a00", width=3)

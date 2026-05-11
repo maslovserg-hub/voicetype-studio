@@ -558,6 +558,20 @@ def run_installer() -> None:
     win.geometry("460x260")
     win.eval("tk::PlaceWindow . center")
     win.protocol("WM_DELETE_WINDOW", sys.exit)
+    # Same .ico as the main app so the installer window matches the
+    # final app's taskbar look. Best-effort: missing assets is silent.
+    if getattr(sys, "frozen", False):
+        ico = os.path.join(getattr(sys, "_MEIPASS", ""), "assets", "icon.ico")
+    else:
+        ico = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "assets", "icon.ico",
+        )
+    if os.path.isfile(ico):
+        try:
+            win.iconbitmap(default=ico)
+        except Exception:
+            pass
 
     header = tk.Label(
         win, text="VoiceType Studio", font=("Segoe UI", 18, "bold"),

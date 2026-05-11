@@ -93,6 +93,17 @@ class App:
         self.root: CTkDnD = CTkDnD()
         self.root.withdraw()  # only the tray icon is meant to be visible
         self.root.title("VoiceType Studio")
+        # Bundled .ico drives the taskbar / Alt+Tab / Проводник icon for
+        # every Toplevel that doesn't override it. Path lookup handles
+        # both frozen and source-mode runs.
+        from core.assets import icon_ico_path
+
+        ico = icon_ico_path()
+        if ico:
+            try:
+                self.root.iconbitmap(default=ico)
+            except Exception:
+                logger.exception("Failed to apply app icon")
 
         # --- shared ASR executor ---------------------------------------
         self.asr_executor: ThreadPoolExecutor = ThreadPoolExecutor(
@@ -229,6 +240,7 @@ class App:
         self._history_window = open_history_window(
             self.root,
             on_open=self._restore_history_row,
+            settings=self.settings,
         )
 
     def _restore_history_row(self, row: dict, segments) -> None:

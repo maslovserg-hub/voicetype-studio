@@ -12,7 +12,12 @@ a = Analysis(
     ['launcher.py'],
     pathex=[],
     binaries=[],
-    datas=[],
+    datas=[
+        # Bundled robot icon for the installer window. Same .ico the
+        # main app uses, so the installer looks like the app it installs.
+        ('../assets/icon.ico', 'assets'),
+        ('../assets/icon_64.png', 'assets'),
+    ],
     hiddenimports=[
         # IShellLinkW shortcut creation: WScript.Shell mangles Cyrillic
         # paths, so we go straight at the Unicode COM interface via
@@ -50,4 +55,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon='../assets/icon.ico',
 )
