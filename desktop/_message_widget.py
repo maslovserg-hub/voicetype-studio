@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import sys
 from pathlib import Path
 from typing import Callable, Literal, Optional
@@ -315,7 +316,7 @@ class MessageWidget(ctk.CTkFrame):
 
     def _render_text(self, parent: ctk.CTkFrame, text: str) -> None:
         textbox = ctk.CTkTextbox(parent, height=200, wrap="word")
-        textbox.insert("0.0", text)
+        _insert_with_markdown_bold(textbox, text)
         textbox.configure(state="normal")  # leave editable for selection
         textbox.pack(fill="both", expand=True)
         # Right-click → Copy / Select All. No "Paste" — this is a result view.
@@ -432,6 +433,48 @@ class MessageWidget(ctk.CTkFrame):
             copyfile(source_wav, path)
         except Exception:
             logger.exception("Failed to copy audio %s -> %s", source_wav, path)
+
+
+_BOLD_RE = re.compile(r"\*\*(.+?)\*\*", flags=re.DOTALL)
+
+
+def _insert_with_markdown_bold(textbox: "ctk.CTkTextbox", text: str) -> None:
+    """Insert ``text`` into ``textbox`` rendering ``**word**`` as bold.
+
+    The STRUCTURED prompt emits Markdown bold around key terms. CTkTextbox
+    is just a Tk Text widget under the hood, so we use a tag with the same
+    font but ``weight="bold"`` and split the string at each ``**…**`` span.
+    Headings (``## …``) and other markdown are left as plain text — only
+    bold needs visual treatment for now.
+    """
+    # Configure the tag once. ``CTkTextbox.tag_config`` proxies to the
+    # underlying Tk widget. Use the textbox's current font to inherit size
+    # / family — we only flip ``weight``.
+    try:
+        base_font = textbox.cget("font")
+    except Exception:
+        base_font = None
+    # Tk accepts a (family, size, *styles) tuple; fall back to a simple
+    # weight-only spec when we can't introspect.
+    if isinstance(base_font, tuple) and len(base_font) >= 2:
+        bold_font = (base_font[0], base_font[1], "bold")
+    else:
+        bold_font = ("TkDefaultFont", 11, "bold")
+    try:
+        textbox.tag_config("md_bold", font=bold_font)
+    except Exception:
+        # Fallback: no bold rendering, but still insert text cleanly.
+        textbox.insert("0.0", text)
+        return
+
+    cursor = 0
+    for m in _BOLD_RE.finditer(text):
+        if m.start() > cursor:
+            textbox.insert("end", text[cursor : m.start()])
+        textbox.insert("end", m.group(1), ("md_bold",))
+        cursor = m.end()
+    if cursor < len(text):
+        textbox.insert("end", text[cursor:])
 
 
 def _open_in_default_player(path: str) -> None:

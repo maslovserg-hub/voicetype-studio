@@ -119,7 +119,7 @@ FORMAT_LABELS: dict[str, str] = {
     "timestamps": "⏱ Таймкоды",
     "srt": "📺 SRT",
     "brief": "📋 Тезисы",
-    "structured": "📚 По разделам",
+    "structured": "📚 Конспект",
     "roles": "🎭 По ролям",
     "questions": "❓ Вопросы",
     "tts": "🔊 Озвучка",

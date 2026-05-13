@@ -47,7 +47,7 @@ FORMATS: dict[str, tuple[str, str, object]] = {
     "ts":     ("⏱ Таймкоды",    "format",  OutputFormat.TIMESTAMPS),
     "srt":    ("📺 SRT",         "format",  OutputFormat.SRT),
     "brief":  ("📋 Тезисы",      "summary", SummaryMode.BRIEF),
-    "struct": ("📚 По разделам", "summary", SummaryMode.STRUCTURED),
+    "struct": ("📚 Конспект",    "summary", SummaryMode.STRUCTURED),
     "roles":  ("🎭 По ролям",    "summary", SummaryMode.ROLES),
     "ques":   ("❓ Вопросы",      "summary", SummaryMode.QUESTIONS),
     "tts":    ("🔊 Озвучка",     "tts",     None),
