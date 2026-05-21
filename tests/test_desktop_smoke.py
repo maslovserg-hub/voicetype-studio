@@ -126,3 +126,94 @@ def test_build_tray_accepts_history_kwarg() -> None:
     assert "on_open_history" in sig.parameters
     # Optional — older callers (and tests that mock tray) may omit it.
     assert sig.parameters["on_open_history"].default is None
+
+
+def test_dictation_watchdog_reopens_dead_stream() -> None:
+    """Watchdog must reopen a stream whose ``.active`` flipped to False.
+
+    Real failure mode this guards: Game Bar mic privacy toggle aborts the
+    PortAudio stream silently — the app stays alive in tray with a dead
+    stream until manually restarted. The watchdog should detect this and
+    call ``_open_mic_stream`` to get audio flowing again.
+    """
+    from desktop.dictation import DictationListener
+
+    class _FakeStream:
+        def __init__(self) -> None:
+            self.active = True
+
+        def stop(self) -> None:
+            self.active = False
+
+        def close(self) -> None:
+            self.active = False
+
+    listener = DictationListener(transcribe_fn=lambda a, sr: "", overlay=None)
+    listener._mic_stream = _FakeStream()
+
+    # Liveness check matches what watchdog calls.
+    assert listener._stream_alive() is True
+
+    # Simulate PortAudio aborting the stream.
+    listener._mic_stream.active = False
+    assert listener._stream_alive() is False
+
+    # _open_mic_stream is what the watchdog calls. Patch sounddevice import
+    # so we don't touch real hardware in the test.
+    import sys
+    import types
+
+    fake_sd = types.ModuleType("sounddevice")
+    opened: list[_FakeStream] = []
+
+    def _InputStream(**kwargs):  # noqa: ARG001 — match real signature loosely
+        s = _FakeStream()
+        opened.append(s)
+        # Real sounddevice streams expose start() too.
+        s.start = lambda: None  # type: ignore[attr-defined]
+        return s
+
+    fake_sd.InputStream = _InputStream  # type: ignore[attr-defined]
+    saved = sys.modules.get("sounddevice")
+    sys.modules["sounddevice"] = fake_sd
+    try:
+        assert listener._open_mic_stream() is True
+    finally:
+        if saved is not None:
+            sys.modules["sounddevice"] = saved
+        else:
+            sys.modules.pop("sounddevice", None)
+
+    assert opened, "watchdog reopen path must construct a fresh InputStream"
+    assert listener._stream_alive() is True
+
+
+def test_dictation_open_mic_stream_swallows_failure() -> None:
+    """If sounddevice raises (no device, blocked by privacy), return False.
+
+    The watchdog backs off and keeps trying — but only if ``_open_mic_stream``
+    doesn't propagate the exception out of the watchdog thread.
+    """
+    import sys
+    import types
+
+    from desktop.dictation import DictationListener
+
+    fake_sd = types.ModuleType("sounddevice")
+
+    def _InputStream(**kwargs):  # noqa: ARG001
+        raise RuntimeError("Error opening InputStream: Device unavailable")
+
+    fake_sd.InputStream = _InputStream  # type: ignore[attr-defined]
+
+    listener = DictationListener(transcribe_fn=lambda a, sr: "", overlay=None)
+    saved = sys.modules.get("sounddevice")
+    sys.modules["sounddevice"] = fake_sd
+    try:
+        assert listener._open_mic_stream() is False
+    finally:
+        if saved is not None:
+            sys.modules["sounddevice"] = saved
+        else:
+            sys.modules.pop("sounddevice", None)
+    assert listener._mic_stream is None

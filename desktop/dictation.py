@@ -42,6 +42,14 @@ SILENCE_TH = 0.004
 SILENCE_BLK = 15  # 1.5 s of silence → flush
 MAX_BLOCKS = 150  # 15 s max per utterance
 
+# Watchdog cadence — every WATCHDOG_INTERVAL we check that the mic stream
+# is still ``active`` and re-open it if not. PortAudio silently aborts the
+# stream when Windows revokes mic access (Game Bar privacy toggle, default
+# device change, USB mic unplug), so without this the app would sit alive
+# in the tray with a dead stream until manually restarted.
+WATCHDOG_INTERVAL = 2.0
+WATCHDOG_BACKOFF_MAX = 10.0
+
 
 # Russian-only post-processing — drop garbage Latin tokens and the leading
 # "ы" GigaAM sometimes hallucinates before a Russian word.
@@ -306,35 +314,46 @@ class DictationListener:
 
         self._listener = None  # pynput Listener
         self._mic_stream = None  # sounddevice.InputStream
+        self._stream_lock = threading.Lock()
+        self._watchdog_thread: threading.Thread | None = None
+        self._watchdog_stop = threading.Event()
         self._win32 = _win32()  # cached or None
 
     # --- lifecycle -----------------------------------------------------
 
     def start(self) -> None:
         """Open the mic stream and start the global hotkey listener."""
-        import sounddevice as sd
         from pynput import keyboard
 
-        if self._mic_stream is not None:
+        if self._listener is not None:
             return  # already started
 
-        self._mic_stream = sd.InputStream(
-            samplerate=SAMPLE_RATE,
-            channels=1,
-            blocksize=BLOCKSIZE,
-            dtype="float32",
-            callback=self._audio_cb,
-        )
-        self._mic_stream.start()
+        self._open_mic_stream()  # best-effort; watchdog will retry on failure
 
         self._listener = keyboard.Listener(on_press=self._on_press)
         self._listener.start()
+
+        self._watchdog_stop.clear()
+        self._watchdog_thread = threading.Thread(
+            target=self._watchdog_loop,
+            daemon=True,
+            name="dictation-watchdog",
+        )
+        self._watchdog_thread.start()
         logger.info("Dictation listener started")
 
     def stop(self) -> None:
         """Cancel any in-flight utterance and shut down mic + hotkey."""
         self.cancelled = True
         self.recording = False
+
+        self._watchdog_stop.set()
+        if self._watchdog_thread is not None:
+            try:
+                self._watchdog_thread.join(timeout=1.0)
+            except Exception:
+                pass
+            self._watchdog_thread = None
 
         if self._listener is not None:
             try:
@@ -343,13 +362,14 @@ class DictationListener:
                 pass
             self._listener = None
 
-        if self._mic_stream is not None:
-            try:
-                self._mic_stream.stop()
-                self._mic_stream.close()
-            except Exception:
-                pass
-            self._mic_stream = None
+        with self._stream_lock:
+            if self._mic_stream is not None:
+                try:
+                    self._mic_stream.stop()
+                    self._mic_stream.close()
+                except Exception:
+                    pass
+                self._mic_stream = None
 
         try:
             self.overlay.hide()
@@ -357,10 +377,87 @@ class DictationListener:
             pass
         logger.info("Dictation listener stopped")
 
+    # --- mic stream management ----------------------------------------
+
+    def _open_mic_stream(self) -> bool:
+        """Open (or reopen) the InputStream. Returns True on success.
+
+        Safe to call repeatedly — closes any existing stream first. The
+        watchdog uses this to recover from PortAudio aborts (Game Bar mic
+        revoke, default-device swap, USB unplug, sleep/resume).
+        """
+        import sounddevice as sd
+
+        with self._stream_lock:
+            # Tear down any dead/old stream first.
+            if self._mic_stream is not None:
+                try:
+                    self._mic_stream.stop()
+                    self._mic_stream.close()
+                except Exception:
+                    pass
+                self._mic_stream = None
+
+            try:
+                stream = sd.InputStream(
+                    samplerate=SAMPLE_RATE,
+                    channels=1,
+                    blocksize=BLOCKSIZE,
+                    dtype="float32",
+                    callback=self._audio_cb,
+                )
+                stream.start()
+                self._mic_stream = stream
+                logger.info("Mic stream opened")
+                return True
+            except Exception as exc:
+                # Common when mic is blocked (Game Bar privacy) or no device
+                # is plugged in. Watchdog will keep retrying with backoff.
+                logger.warning("Failed to open mic stream: %s", exc)
+                return False
+
+    def _stream_alive(self) -> bool:
+        stream = self._mic_stream
+        if stream is None:
+            return False
+        try:
+            return bool(stream.active)
+        except Exception:
+            return False
+
+    def _watchdog_loop(self) -> None:
+        """Re-open the mic stream whenever it dies.
+
+        Runs every ~``WATCHDOG_INTERVAL`` seconds. On consecutive failures
+        backs off up to ``WATCHDOG_BACKOFF_MAX`` so a permanently absent
+        device doesn't spam the logs. Skips re-open while the user is
+        mid-utterance to avoid yanking ``_blocks`` from under ``_audio_cb``.
+        """
+        backoff = WATCHDOG_INTERVAL
+        while not self._watchdog_stop.wait(backoff):
+            if self._stream_alive():
+                backoff = WATCHDOG_INTERVAL
+                continue
+            if self.recording:
+                # Don't disturb an in-flight utterance — _stop_flush will
+                # finish writing _blocks; we retry on the next tick.
+                continue
+            if self._open_mic_stream():
+                backoff = WATCHDOG_INTERVAL
+            else:
+                backoff = min(backoff * 2, WATCHDOG_BACKOFF_MAX)
+
     # --- audio + hotkey callbacks --------------------------------------
 
     def _audio_cb(self, indata, frames, time_info, status) -> None:
         import numpy as np
+
+        if status:
+            # PortAudio status flags (input_overflow etc). Most are
+            # recoverable, but if the stream is being aborted this is
+            # often the only signal we get — log so the watchdog's
+            # subsequent reopen has a paper trail.
+            logger.debug("audio status: %s", status)
 
         blk = indata[:, 0].copy()
         rms = float(np.sqrt(np.mean(blk ** 2)))
