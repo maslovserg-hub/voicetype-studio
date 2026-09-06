@@ -244,3 +244,32 @@
 - [ ] **Bot avatar через @BotFather** — программно поставить картинку нельзя (Bot API не покрывает). Открыть BotFather → `/mybots` → выбрать бот → Edit Bot → Edit Botpic → загрузить `c:\Projects\voicetype-studio\assets\bot.png`. Один раз, ручной шаг.
 - [ ] **Хотим in-place icon swap без ребилда** — текущая попытка через `win32api.UpdateResource` сломала exe (overlay truncation). Решение — `rcedit.exe` от electron, он умеет с PyInstaller-overlay. Скачать exe ~1 МБ, добавить хелпер скрипт. Сэкономит ~5 мин на каждой итерации по иконке.
 - [ ] **Опционально**: если silero 24k всё равно недостаточно — Edge TTS / OpenAI TTS / ElevenLabs на выбор (см. варианты в чате).
+
+## День 2026-09-06 (первая установка на второй машине — два реальных бага в релизе v1.0.1)
+
+**Контекст:** первая установка VoiceType Studio на отдельном компьютере (не основная машина разработки), через публичный `VoiceTypeStudio-Setup.exe` с GitHub Releases v1.0.1. Вскрыла два независимых бага, оба живут в релизе с момента его публикации — задели бы любого нового пользователя.
+
+**Баг 1 — двойная вложенность в `VoiceTypeStudio_release.zip`:**
+- `docs/BUILDING.md` документировал `Compress-Archive -Path dist\VoiceTypeStudio -DestinationPath ...` (без `\*`). Такая команда кладёт саму папку `VoiceTypeStudio\` как top-level entry в архиве → при распаковке в `INSTALL_DIR` получается `VoiceTypeStudio\VoiceTypeStudio\VoiceTypeStudio.exe`, а `launcher.py`'s `EXE_PATH` ждёт плоский `INSTALL_DIR\VoiceTypeStudio.exe`.
+- Тот самый баг с двойной вложенностью, который чинили для v1.0.0 (см. запись «Flat install layout» выше) — регрессировал в v1.0.1 именно из-за этой команды в доке.
+- Следствие: `launch()` → `subprocess.Popen([EXE_PATH])` кидает `FileNotFoundError` внутри Tkinter `after`-коллбэка. Tkinter глотает исключение молча (`console=False`, никакого stderr не видно) → окно установщика висит на «Готово! Запускаю…» навсегда.
+- **Фикс:** `docs/BUILDING.md` исправлен на `-Path dist\VoiceTypeStudio\*` (со звёздочкой) + предупреждающий комментарий в самой команде. Исправленный `VoiceTypeStudio_release.zip` (плоская структура, 223 552 584 байт) пересобран из уже установленных файлов (без полной пересборки из исходников — Compress-Archive поверх уже распакованной папки) и вручную залит поверх старого ассета в релизе v1.0.1 на GitHub.
+- Коммит: `165c8a2` — `docs: fix Compress-Archive command that caused double-nested v1.0.1 zip`.
+
+**Баг 2 — `install_ffmpeg_via_winget()` бросает fallback из-за ненулевого кода winget:**
+- Диктовка «работала» (индикатор реагировал на голос), но текст никогда не вставлялся. Причина — GigaAM (`gigaam/preprocess.py: load_audio`) шеллится в `ffmpeg` для декодирования WAV; без ffmpeg на PATH — тихий `FileNotFoundError` в фоновом потоке `desktop/dictation.py:_transcribe_and_paste`, проглоченный `logger.exception` (опять же invisible при `console=False`).
+- Диагностика потребовала перезапуска `VoiceTypeStudio.exe` через `Start-Process -RedirectStandardOutput/-RedirectStandardError` — единственный способ увидеть логи у GUI-приложения без консоли (PyInstaller `--windowed` иначе никуда их не пишет).
+- Корень: в `launcher.py` `install_ffmpeg_via_winget()` при **любом** ненулевом коде возврата `winget install` сразу возвращала `False`, даже не проверяя диск. А winget возвращает ненулевой код и для совершенно безобидного случая «уже установлено, обновлений нет» — который бывает при повторном запуске установщика, на заранее подготовленных корпоративных образах и т.п. В этом случае fallback-сканирование `%LOCALAPPDATA%\Microsoft\WinGet\Packages` за `ffmpeg.exe` (которое патчит `os.environ["PATH"]` в процессе лаунчера, чтобы унаследовал и запускаемый через `Popen` app) просто никогда не выполнялось.
+- **Фикс:** убрана ранняя проверка `if result.returncode != 0: return False` — теперь fallback (`ffmpeg_available()` + скан WinGet Packages) всегда выполняется после попытки установки, независимо от кода выхода winget. Настоящим провалом остаётся только `OSError`/`TimeoutExpired` при самом запуске winget или полное отсутствие ffmpeg на диске после.
+- Добавлен регрессионный тест `test_launcher_winget_already_installed_still_finds_ffmpeg` — воспроизводит ровно этот сценарий (winget возвращает `returncode=1`, но `ffmpeg.exe` реально лежит в Packages).
+- Коммиты: `626a5d7` (фикс + тест), `5bc2486` (по замечанию `codex review` — тест не мокал `sys.platform`, падал бы на не-Windows).
+
+**Независимый ревью:** `codex review --base 88d4eb4` (CLI `openai.chatgpt`-расширения VS Code, уже авторизован) прогнан по диффу всех трёх коммитов — нашёл ровно одно реальное P2-замечание (см. выше), больше проблем не выявил.
+
+**Побочные находки/фиксы на самой установке (не в коде, локально на машине):**
+- Ярлык в Пуск-меню не создавался (`create_start_menu_shortcut()` в лаунчере молча зафейлилась) — создан вручную через `WScript.Shell` COM.
+- Итого 20/20 тестов в `tests/test_build_smoke.py` зелёные после всех правок.
+
+**Осталось:**
+- [ ] Переименовать ассет `_tmp_setup_from_v1.0.0.exe` → `VoiceTypeStudio-Setup.exe` в релизе v1.0.1 (косметика, не блокирует установку — `APP_URL`/ссылка в README не зависят от имени этого файла).
+- [ ] Разобраться, почему `create_start_menu_shortcut()` зафейлилась при обычном запуске лаунчера — не воспроизводили целенаправленно, просто пофиксили вручную постфактум.
