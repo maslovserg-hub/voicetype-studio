@@ -64,7 +64,14 @@ dist/
 
 ```powershell
 # 1. Запаковать dist/VoiceTypeStudio в zip
-Compress-Archive -Path dist\VoiceTypeStudio -DestinationPath VoiceTypeStudio_release.zip
+# ВАЖНО: -Path dist\VoiceTypeStudio\* (со звёздочкой!), а не dist\VoiceTypeStudio.
+# Без звёздочки Compress-Archive кладёт саму папку VoiceTypeStudio\ как
+# top-level entry в архиве -> при распаковке в INSTALL_DIR получается
+# двойная вложенность VoiceTypeStudio\VoiceTypeStudio\VoiceTypeStudio.exe,
+# а launcher.py ждёт плоский EXE_PATH = INSTALL_DIR\VoiceTypeStudio.exe.
+# Это уже ловили один раз (см. docs/PROGRESS.md, "Flat install layout") и
+# регрессировало в релизе v1.0.1 из-за этой самой команды без звёздочки.
+Compress-Archive -Path dist\VoiceTypeStudio\* -DestinationPath VoiceTypeStudio_release.zip
 
 # 2. Создать тэг и push
 git tag v1.0.0
