@@ -247,6 +247,10 @@ def test_launcher_winget_already_installed_still_finds_ffmpeg(
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
 
+    # The function's first check is ``sys.platform != "win32"``; pin it so
+    # this test is meaningful (and passes) on non-Windows dev machines too.
+    monkeypatch.setattr(mod.sys, "platform", "win32")
+
     # "winget" itself must resolve so the function doesn't bail before
     # ever running it; ffmpeg_available() is stubbed separately below so
     # its own shutil.which("ffmpeg") call is bypassed entirely.
