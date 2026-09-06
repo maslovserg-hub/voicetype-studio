@@ -2,7 +2,9 @@
 
 Top section: a scrollable feed of :class:`MessageWidget` bubbles, one per
 submitted task. Bottom section: an :class:`InputBar` with file-picker, URL
-field, Старт button and a drop zone overlay (tkinterdnd2).
+field, Скачать / Старт buttons and a drop zone overlay (tkinterdnd2).
+Старт runs the full transcription pipeline; Скачать only saves the source
+file into the user's Downloads folder.
 
 Threading
 ---------
@@ -24,8 +26,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import queue
 import re
+import sys
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -116,7 +120,7 @@ def label_for_source(kind: str, value: str) -> str:
 
 
 class InputBar(ctk.CTkFrame):
-    """Bottom row: 📎 + URL entry + Старт."""
+    """Bottom row: 📎 + URL entry + Скачать + Старт."""
 
     def __init__(
         self,
@@ -124,9 +128,11 @@ class InputBar(ctk.CTkFrame):
         *,
         on_submit_url: Callable[[str], None],
         on_pick_file: Callable[[], None],
+        on_download_url: Callable[[str], None],
     ):
         super().__init__(master)
         self._on_submit_url = on_submit_url
+        self._on_download_url = on_download_url
 
         # Hand-drawn icon — emoji glyphs render unreliably across Windows
         # font fallbacks, so we ship our own.
@@ -149,6 +155,19 @@ class InputBar(ctk.CTkFrame):
         self._entry.bind("<Return>", lambda _e: self._fire_submit())
         attach_clipboard_menu(self._entry)
 
+        # "Скачать" saves the source file and stops there — no ASR, no
+        # LLM. Sits left of Старт so the default action stays rightmost.
+        self._download_btn = ctk.CTkButton(
+            self,
+            text="Скачать",
+            width=100,
+            fg_color="transparent",
+            border_width=1,
+            text_color=("#1f6aa5", "#5aa9e6"),
+            command=self._fire_download,
+        )
+        self._download_btn.pack(side="left", padx=4, pady=8)
+
         self._submit_btn = ctk.CTkButton(
             self,
             text="Старт",
@@ -162,6 +181,13 @@ class InputBar(ctk.CTkFrame):
         if not value.strip():
             return
         self._on_submit_url(value)
+        self._entry.delete(0, "end")
+
+    def _fire_download(self) -> None:
+        value = self._entry.get()
+        if not value.strip():
+            return
+        self._on_download_url(value)
         self._entry.delete(0, "end")
 
 
@@ -213,6 +239,7 @@ class TranscriptorWindow(ctk.CTkToplevel):
             self,
             on_submit_url=self._submit_value,
             on_pick_file=self._open_file_picker,
+            on_download_url=self._download_value,
         )
         self._input.pack(fill="x", padx=10, pady=10)
 
@@ -300,6 +327,23 @@ class TranscriptorWindow(ctk.CTkToplevel):
             self._run_task(task), self.bot_loop
         )
 
+    def _download_value(self, value: str) -> None:
+        """Скачать — save the source file, no transcription."""
+        kind, normalized = classify_input(value)
+        if kind != "url":
+            self._show_toast("Скачивать можно только по ссылке.")
+            return
+        task = TranscriptionTask(
+            task_id=uuid.uuid4().hex[:10],
+            source_label=label_for_source(kind, normalized),
+            source=normalized,
+        )
+        self._tasks[task.task_id] = task
+        self._spawn_widget(task)
+        asyncio.run_coroutine_threadsafe(
+            self._run_download(task), self.bot_loop
+        )
+
     def _spawn_widget(self, task: TranscriptionTask) -> None:
         try:
             self._empty_hint.pack_forget()
@@ -344,6 +388,26 @@ class TranscriptorWindow(ctk.CTkToplevel):
             pass
 
     # ----- async pipeline ----------------------------------------------
+
+    async def _run_download(self, task: TranscriptionTask) -> None:
+        """Download only — no WAV, no ASR, no history, no cleanup."""
+        try:
+            self._post(("progress", task.task_id, "Скачиваю…", 0))
+
+            def dl_cb(percent: int, status: str, _tid=task.task_id) -> None:
+                # Cap at 99: with separate video+audio streams yt-dlp
+                # reports "finished" once per stream, so a 100% here
+                # would show "done" twice and again before the merge.
+                # The real 100 comes from the "downloaded" event below.
+                self._post(("progress", _tid, status, min(99, percent)))
+
+            path = await Downloader.download_original(
+                task.source, _downloads_dir(), progress_callback=dl_cb,
+            )
+            self._post(("downloaded", task.task_id, path))
+        except Exception as e:
+            logger.exception("Download task %s failed", task.task_id)
+            self._post(("error", task.task_id, str(e)))
 
     async def _run_task(self, task: TranscriptionTask) -> None:
         downloaded_path: Optional[Path] = None  # only set for URL inputs
@@ -484,6 +548,13 @@ class TranscriptorWindow(ctk.CTkToplevel):
                 task.segments = segments
                 task.status = "done"
                 task.widget.mark_done()
+        elif kind == "downloaded":
+            _, task_id, path = event
+            task = self._tasks.get(task_id)
+            if task and task.widget:
+                task.status = "done"
+                task.progress = 100
+                task.widget.mark_downloaded(path)
         elif kind == "error":
             _, task_id, message = event
             task = self._tasks.get(task_id)
@@ -552,6 +623,35 @@ class TranscriptorWindow(ctk.CTkToplevel):
 
 
 # --- helpers ---------------------------------------------------------------
+
+
+def _downloads_dir() -> Path:
+    """The user's real Downloads folder.
+
+    ``Path.home() / "Downloads"`` is wrong whenever the folder has been
+    redirected — OneDrive's "back up my folders" does exactly that on a
+    lot of Windows installs — so ask the registry for the known-folder
+    path first and only guess if that fails.
+    """
+    if sys.platform == "win32":
+        try:
+            import winreg
+
+            with winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER,
+                r"Software\Microsoft\Windows\CurrentVersion"
+                r"\Explorer\User Shell Folders",
+            ) as key:
+                raw, _ = winreg.QueryValueEx(
+                    key, "{374DE290-123F-4565-9164-39C4925E467B}"
+                )
+            path = Path(os.path.expandvars(raw))
+            if path.is_dir():
+                return path
+        except Exception:
+            logger.debug("known-folder lookup failed", exc_info=True)
+    guess = Path.home() / "Downloads"
+    return guess if guess.is_dir() else Path.home()
 
 
 def _looks_like_url(value: str) -> bool:

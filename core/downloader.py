@@ -1,6 +1,7 @@
 import re
 import asyncio
 import logging
+import shutil
 import tempfile
 from pathlib import Path
 from typing import Callable, Optional, Tuple
@@ -47,6 +48,22 @@ def _domains_for_url(url: str) -> tuple[str, ...]:
     return ()
 
 
+def _has_ffmpeg() -> bool:
+    """Is ffmpeg on PATH? Installing it is optional in the launcher."""
+    return shutil.which("ffmpeg") is not None
+
+
+def _unique_path(path: Path) -> Path:
+    """``name.mp4`` → ``name (2).mp4`` if the file is already there."""
+    if not path.exists():
+        return path
+    for n in range(2, 100):
+        candidate = path.with_name(f"{path.stem} ({n}){path.suffix}")
+        if not candidate.exists():
+            return candidate
+    return path
+
+
 class Downloader:
     YANDEX_DISK_PATTERN = re.compile(
         r"(?:disk\.yandex\.(?:ru|com)|yadi\.sk)/[di]/[a-zA-Z0-9_-]+",
@@ -80,6 +97,45 @@ class Downloader:
         return await cls._download_ytdlp(
             url, progress_callback=progress_callback,
         ), "ytdlp"
+
+    @classmethod
+    async def download_original(
+        cls,
+        url: str,
+        dest_dir: Path,
+        *,
+        progress_callback: Optional[Callable[[int, str], None]] = None,
+    ) -> Path:
+        """Save the source media into ``dest_dir`` for the user to keep.
+
+        Unlike :meth:`download` — which grabs the cheapest audio stream
+        ASR can chew on and deletes it afterwards — this fetches the best
+        available video and leaves it where the user can find it.
+
+        Yandex.Disk and direct-file links have no stream choice to make:
+        they already deliver the original, so we reuse those code paths
+        and move the result out of ``config.temp_dir``, which callers
+        expect to stay empty.
+        """
+        dest_dir.mkdir(parents=True, exist_ok=True)
+
+        if cls.YANDEX_DISK_PATTERN.search(url):
+            tmp_path = await cls._download_yandex_disk(url)
+        else:
+            parsed = urlparse(url)
+            if Path(parsed.path).suffix.lower() in cls.DIRECT_FILE_EXTS:
+                tmp_path = await cls._download_direct(url)
+            else:
+                return await cls._download_ytdlp(
+                    url,
+                    progress_callback=progress_callback,
+                    dest_dir=dest_dir,
+                    want_video=True,
+                )
+
+        final = _unique_path(dest_dir / tmp_path.name)
+        shutil.move(str(tmp_path), str(final))
+        return final
 
     @classmethod
     async def _download_yandex_disk(cls, url: str) -> Path:
@@ -164,9 +220,26 @@ class Downloader:
         url: str,
         *,
         progress_callback: Optional[Callable[[int, str], None]] = None,
+        dest_dir: Optional[Path] = None,
+        want_video: bool = False,
     ) -> Path:
-        """Download using yt-dlp (YouTube, RuTube, VK, etc.)."""
-        output_template = str(config.temp_dir / "%(id)s.%(ext)s")
+        """Download using yt-dlp (YouTube, RuTube, VK, etc.).
+
+        ``dest_dir`` and ``want_video`` are off by default so the
+        transcription path behaves exactly as before. They are set only by
+        :meth:`download_original`, which saves a real video file for the
+        user instead of the audio-only stream ASR needs.
+        """
+        if dest_dir is not None:
+            # ``.120B`` truncates the title to 120 *bytes* so a long
+            # (or Cyrillic — 2 bytes/char) name can't blow the Windows
+            # 260-char path limit. The id suffix keeps two videos with
+            # the same title from colliding: without it yt-dlp sees an
+            # existing file, calls it "already downloaded" and hands
+            # back somebody else's video.
+            output_template = str(dest_dir / "%(title).120B [%(id)s].%(ext)s")
+        else:
+            output_template = str(config.temp_dir / "%(id)s.%(ext)s")
 
         loop = asyncio.get_event_loop()
 
@@ -210,6 +283,12 @@ class Downloader:
                 # the speech for transcription. Audio-only when offered;
                 # otherwise the lightest available muxed stream.
                 "format": (
+                    # Separate video+audio streams need ffmpeg to mux.
+                    # The launcher installs it optionally, so fall back
+                    # to a pre-muxed stream when it's missing instead of
+                    # letting yt-dlp abort mid-download.
+                    ("bestvideo+bestaudio/best" if _has_ffmpeg() else "best")
+                    if want_video else
                     "bestaudio/worstaudio/"
                     "worstvideo[height<=480]+bestaudio/"
                     "best[height<=480]/worst"
@@ -233,7 +312,16 @@ class Downloader:
                 # uplinks without tripping rate-limits.
                 "concurrent_fragment_downloads": 8,
                 "fragment_retries": 10,
+                # YouTube expires a stream URL while it's still being
+                # read, so one long-lived GET over a 300 MB file tends to
+                # die with a 403 halfway through. Pulling it in 10 MB
+                # ranges keeps each request short-lived, and ``retries``
+                # covers the odd chunk that still fails.
+                "http_chunk_size": 10 * 1024 * 1024,
+                "retries": 10,
             }
+            if want_video and _has_ffmpeg():
+                opts["merge_output_format"] = "mp4"
             return opts
 
         def _run(opts: dict) -> Path:
@@ -241,11 +329,26 @@ class Downloader:
                 info = ydl.extract_info(url, download=True)
                 if info is None:
                     raise ValueError("Failed to extract info from URL")
+                # After a video+audio merge the file on disk is the muxed
+                # ``.mp4``, while ``prepare_filename`` may still describe
+                # one of the source streams. yt-dlp records what it
+                # actually wrote in ``requested_downloads[*]["filepath"]``
+                # — trust that first and only guess as a fallback.
+                for entry in (info.get("requested_downloads") or []):
+                    written = entry.get("filepath")
+                    if written:
+                        return Path(written)
                 return Path(ydl.prepare_filename(info))
 
         def _try_with_cookies_file(path: str) -> Path:
             opts = _base_opts()
             opts["cookiefile"] = path
+            return _run(opts)
+
+        def _try_client(client: str) -> Path:
+            """Re-ask YouTube as a different player client."""
+            opts = _base_opts()
+            opts["extractor_args"] = {"youtube": {"player_client": [client]}}
             return _run(opts)
 
         def _try_browser(browser: Optional[str]) -> Path:
@@ -300,6 +403,29 @@ class Downloader:
                 return _try_browser(None)
             except Exception as exc:
                 first_error = _strip_ansi(str(exc))
+                if _looks_like_forbidden(first_error):
+                    # Cookies don't help here — the URLs are simply dead.
+                    # ``mweb`` still serves a working muxed stream (360p,
+                    # audio included), which is enough for both ASR and
+                    # a watchable download.
+                    logger.info("403 from default client — retrying as mweb")
+                    last_error = first_error
+                    # A URL can also die mid-download. Re-running the
+                    # extraction mints a fresh one, and yt-dlp resumes
+                    # from the ``.part`` file rather than starting over,
+                    # so a long video survives a couple of expiries.
+                    for attempt in range(3):
+                        try:
+                            return _try_client("mweb")
+                        except Exception as exc2:
+                            last_error = _strip_ansi(str(exc2))
+                            if not _looks_like_forbidden(last_error):
+                                raise RuntimeError(last_error) from exc2
+                            logger.warning(
+                                "mweb attempt %d hit 403 — resuming",
+                                attempt + 1,
+                            )
+                    raise RuntimeError(last_error) from exc
                 if not _looks_like_bot_check(first_error):
                     raise RuntimeError(first_error) from exc
 
@@ -411,6 +537,17 @@ _BOT_CHECK_MARKERS = (
 def _looks_like_bot_check(error_text: str) -> bool:
     low = (error_text or "").lower()
     return any(m.lower() in low for m in _BOT_CHECK_MARKERS)
+
+
+def _looks_like_forbidden(error_text: str) -> bool:
+    """YouTube handing out stream URLs that answer 403.
+
+    Distinct from a bot check: nothing is asking us to sign in, the
+    extraction succeeds and the format list looks normal — the media URLs
+    themselves are simply rejected. Seen on ex-livestreams, where the
+    default player client's URLs go stale.
+    """
+    return "403" in (error_text or "")
 
 
 def _extract_filename(url: str) -> Optional[str]:

@@ -6,6 +6,9 @@ Three states share the same frame:
 * ``done`` — a row of eight format buttons. Clicking one swaps in the
   result row (text area + Copy / Save / Clear buttons, or, for 🔊, a
   player line);
+* ``downloaded`` — a "saved to…" line with an Открыть папку button
+  (the Скачать button's tasks produce a file, not a transcript, so the
+  format buttons would be meaningless);
 * ``error`` — red label with the exception message.
 
 Each widget can also be **collapsed** to a single header line (the
@@ -49,7 +52,7 @@ _BUTTON_ROWS: tuple[tuple[str, ...], ...] = (
     LLM_FORMATS + (TTS_FORMAT,),
 )
 
-WidgetState = Literal["processing", "done", "error"]
+WidgetState = Literal["processing", "done", "downloaded", "error"]
 
 
 class MessageWidget(ctk.CTkFrame):
@@ -141,6 +144,9 @@ class MessageWidget(ctk.CTkFrame):
         self._last_result: FormatResult | None = None
         self._last_format: str | None = None
 
+        # --- download row (created lazily by ``mark_downloaded``) ----
+        self._download_frame: ctk.CTkFrame | None = None
+
         # --- error row (created lazily) ------------------------------
         self._error_label: ctk.CTkLabel | None = None
 
@@ -158,6 +164,7 @@ class MessageWidget(ctk.CTkFrame):
             self._progress_frame,
             self._buttons_frame,
             self._result_frame,
+            self._download_frame,
             self._error_label,
         ):
             if w is None:
@@ -188,6 +195,8 @@ class MessageWidget(ctk.CTkFrame):
                 self._result_frame.pack(
                     fill="both", expand=True, padx=12, pady=(0, 8)
                 )
+        elif self._state == "downloaded" and self._download_frame is not None:
+            self._download_frame.pack(fill="x", padx=12, pady=(0, 8))
         elif self._state == "error" and self._error_label is not None:
             self._error_label.pack(fill="x", padx=12, pady=(0, 8))
 
@@ -212,6 +221,49 @@ class MessageWidget(ctk.CTkFrame):
             pass
         if not self._collapsed:
             self._buttons_frame.pack(fill="x", padx=8, pady=(0, 8))
+
+    def mark_downloaded(self, path: Path) -> None:
+        """Hide progress, show where the file landed + a folder button."""
+        self._state = "downloaded"
+        try:
+            self._progress_frame.pack_forget()
+        except Exception:
+            pass
+        if self._download_frame is None:
+            self._download_frame = ctk.CTkFrame(self, fg_color="transparent")
+            self._download_label = ctk.CTkLabel(
+                self._download_frame,
+                text="",
+                anchor="w",
+                wraplength=620,
+                justify="left",
+            )
+            self._download_label.pack(side="left", fill="x", expand=True)
+            self._open_btn = ctk.CTkButton(
+                self._download_frame,
+                text="Открыть папку",
+                width=130,
+                command=lambda: self._reveal_in_explorer(),
+            )
+            self._open_btn.pack(side="left", padx=(8, 0))
+        self._downloaded_path = Path(path)
+        self._download_label.configure(text=f"✅ Сохранено: {path.name}")
+        if not self._collapsed:
+            self._download_frame.pack(fill="x", padx=12, pady=(0, 8))
+
+    def _reveal_in_explorer(self) -> None:
+        """Open Explorer with the file selected."""
+        path = getattr(self, "_downloaded_path", None)
+        if path is None:
+            return
+        try:
+            if sys.platform == "win32":
+                # /select, needs the path as one argument and backslashes.
+                os.system(f'explorer /select,"{path}"')
+            else:
+                os.startfile(path.parent)  # type: ignore[attr-defined]
+        except Exception:
+            logger.exception("could not reveal %s", path)
 
     def mark_error(self, message: str) -> None:
         self._state = "error"
