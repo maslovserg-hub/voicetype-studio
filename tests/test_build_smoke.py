@@ -230,6 +230,53 @@ def test_launcher_winget_install_skips_when_missing(monkeypatch) -> None:
     assert mod.install_ffmpeg_via_winget() is False
 
 
+def test_launcher_winget_already_installed_still_finds_ffmpeg(
+    monkeypatch, tmp_path,
+) -> None:
+    """winget exits non-zero for "already installed, no applicable
+    update" just as often as for a real failure. If ffmpeg.exe is
+    actually sitting in the WinGet Packages folder, the function must
+    still find it and patch PATH instead of bailing out on the exit
+    code alone — this is exactly what left a live install without a
+    working ffmpeg despite the dialog reporting no error."""
+    import importlib.util
+    import shutil
+    import subprocess
+
+    spec = importlib.util.spec_from_file_location("launcher_mod", LAUNCHER_PY)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    # "winget" itself must resolve so the function doesn't bail before
+    # ever running it; ffmpeg_available() is stubbed separately below so
+    # its own shutil.which("ffmpeg") call is bypassed entirely.
+    monkeypatch.setattr(
+        shutil, "which", lambda name: "C:/fake/winget.exe" if name == "winget" else None,
+    )
+    monkeypatch.setattr(mod, "ffmpeg_available", lambda: False)
+
+    class _FakeCompletedProcess:
+        returncode = 1  # winget's "no applicable update" exit code
+
+    monkeypatch.setattr(
+        subprocess, "run", lambda *a, **kw: _FakeCompletedProcess(),
+    )
+
+    pkg_bin = (
+        tmp_path / "Microsoft" / "WinGet" / "Packages"
+        / "Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe"
+        / "ffmpeg-9.0.1-full_build" / "bin"
+    )
+    pkg_bin.mkdir(parents=True)
+    (pkg_bin / "ffmpeg.exe").write_bytes(b"")
+
+    monkeypatch.setattr(mod.os, "environ", dict(mod.os.environ))
+    mod.os.environ["LOCALAPPDATA"] = str(tmp_path)
+
+    assert mod.install_ffmpeg_via_winget() is True
+    assert str(pkg_bin) in mod.os.environ["PATH"]
+
+
 def test_launcher_install_dir_matches_main_bundle_name() -> None:
     """Launcher extracts the zip's contents directly into INSTALL_DIR
     (the zip is built from ``dist/VoiceTypeStudio/*``, no wrapping

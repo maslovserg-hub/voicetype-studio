@@ -184,12 +184,19 @@ def ffmpeg_available() -> bool:
 
 def install_ffmpeg_via_winget(timeout_s: int = 600) -> bool:
     """Run ``winget install Gyan.FFmpeg`` silently. Returns ``True`` if
-    winget exited cleanly AND ffmpeg is now on PATH.
+    ffmpeg is on PATH (or found + PATH-patched) afterwards.
 
     User-scope install — no admin prompt on Windows 10 1809+ with App
-    Installer. Returns ``False`` on any failure (no winget, network
-    issue, user declined UAC, etc.). PATH is refreshed by re-checking
-    via :func:`shutil.which`, which reads the live environment.
+    Installer. Returns ``False`` only when winget itself couldn't be
+    invoked (no winget, timeout) or ffmpeg is nowhere to be found
+    afterwards. A non-zero winget exit code is deliberately NOT treated
+    as failure on its own: winget returns non-zero for "already
+    installed, no applicable update" just as often as for a real error
+    (e.g. a prior run of this installer already put ffmpeg there, or a
+    machine image ships it pre-provisioned) — bailing out on that would
+    skip the disk-presence fallback below even though ffmpeg is right
+    there and perfectly usable. PATH is refreshed by re-checking via
+    :func:`shutil.which`, which reads the live environment.
     """
     if sys.platform != "win32":
         return False
@@ -199,7 +206,7 @@ def install_ffmpeg_via_winget(timeout_s: int = 600) -> bool:
         # ``--silent`` skips installer prompts; the source/agreement
         # flags suppress the "do you accept the MS Store TOS?" dialog
         # that otherwise blocks a non-interactive run.
-        result = subprocess.run(
+        subprocess.run(
             [
                 "winget", "install", "--id", "Gyan.FFmpeg",
                 "--silent",
@@ -212,11 +219,10 @@ def install_ffmpeg_via_winget(timeout_s: int = 600) -> bool:
         )
     except (OSError, subprocess.TimeoutExpired):
         return False
-    if result.returncode != 0:
-        return False
     # winget updates PATH in the installer's environment, but our
     # already-running process inherited the old PATH. Look in the
-    # well-known install dir as a fallback.
+    # well-known install dir as a fallback. This runs regardless of
+    # winget's exit code — see the "already installed" note above.
     if ffmpeg_available():
         return True
     winget_dir = os.path.join(
