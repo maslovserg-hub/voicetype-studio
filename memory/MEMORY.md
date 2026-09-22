@@ -2,3 +2,4 @@
 - [silero TTS sample_rate stays 24000](feedback_silero_24khz_invariant.md) — не возвращать на 48000, силеро v4_ru даёт металлические артефакты на upsample
 - [Session state 2026-05-11](project_session_2026-05-11.md) — конец дня 11 мая: 183 tests passed, окно «История» собрано, RuTube-формат и TTS 24k фиксы применены, dist/ устарел и ждёт пересборки
 - [No post-build icon patching](feedback_no_postbuild_icon_patch.md) — иконку в готовом PyInstaller exe менять нельзя через CopyIcons_FromIco / UpdateResource: убивает CArchive, exe не стартует
+- [Session state 2026-09-22](project_session_2026-09-22.md) — релиз v1.0.3: Perplexity SSL (просроченный ISRG X2 в хранилище Windows), история панелью в окне, папка скачивания, кнопка обновления; Git затеняет системные find/tar/curl, tar калечит кириллицу
