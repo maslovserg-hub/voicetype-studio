@@ -6,8 +6,9 @@ setlocal
 rem Both the «Обновить» button in Настройки and a double-click on this
 rem file run this script. System32 paths on purpose: Git ships its own
 rem tar/curl that shadow the Windows ones and can't read a zip.
-set "TAR=%SystemRoot%\System32\tar.exe"
-set "CURL=%SystemRoot%\System32\curl.exe"
+set "SYS=%SystemRoot%\System32"
+set "TAR=%SYS%\tar.exe"
+set "CURL=%SYS%\curl.exe"
 set "DIR=%APPDATA%\VoiceTypeStudio"
 rem ASCII-only path: tar mangles Cyrillic in arguments (C:\Users\Сергей\...).
 set "ZIP=%SystemDrive%\ProgramData\VoiceTypeStudio_update.zip"
@@ -25,20 +26,16 @@ if not exist "%DIR%\VoiceTypeStudio.exe" (
     goto fail
 )
 
+rem Ask nicely, then force: on WM_CLOSE the app hides to the tray instead
+rem of exiting, so a soft taskkill alone leaves its files locked and the
+rem unpack dies halfway. ping, not timeout — timeout needs a console
+rem ("input redirection is not supported") and Git's find/tar/curl
+rem shadow the Windows ones, hence %SYS% everywhere.
 echo   Закрываю программу...
-taskkill /IM VoiceTypeStudio.exe >nul 2>&1
-set /a tries=0
-:wait
-tasklist /FI "IMAGENAME eq VoiceTypeStudio.exe" | find /I "VoiceTypeStudio.exe" >nul || goto stopped
-set /a tries+=1
-if %tries% geq 10 (
-    taskkill /F /IM VoiceTypeStudio.exe >nul 2>&1
-    goto stopped
-)
-timeout /t 1 /nobreak >nul
-goto wait
-:stopped
-timeout /t 2 /nobreak >nul
+"%SYS%\taskkill.exe" /IM VoiceTypeStudio.exe >nul 2>&1
+"%SYS%\ping.exe" -n 4 127.0.0.1 >nul
+"%SYS%\taskkill.exe" /F /IM VoiceTypeStudio.exe >nul 2>&1
+"%SYS%\ping.exe" -n 3 127.0.0.1 >nul
 
 echo   Скачиваю новую версию, примерно 220 МБ...
 echo.
@@ -61,7 +58,7 @@ del "%ZIP%" >nul 2>&1
 
 echo   Готово. Запускаю программу...
 start "" "%DIR%\VoiceTypeStudio.exe"
-timeout /t 3 /nobreak >nul
+"%SYS%\ping.exe" -n 4 127.0.0.1 >nul
 exit /b 0
 
 :fail

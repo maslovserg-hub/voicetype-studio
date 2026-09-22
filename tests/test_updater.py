@@ -35,9 +35,16 @@ def test_update_script_shipped_and_sane() -> None:
     raw = script.read_bytes()
     assert b"\r\n" in raw and raw.count(b"\r\n") == raw.count(b"\n")
     text = raw.decode("utf-8")
-    assert "%SystemRoot%\\System32\\tar.exe" in text
-    assert "%SystemRoot%\\System32\\curl.exe" in text
     assert "releases/latest/download/VoiceTypeStudio_release.zip" in text
+    # Every external tool by absolute path. Git puts its own find/tar/curl
+    # ahead of the Windows ones on PATH, and Git's `find` made the
+    # "is it still running?" check always answer "no" — the unpack then
+    # started while the exe was still locked and half-replaced the install.
+    assert 'set "SYS=%SystemRoot%\\System32"' in text
+    for tool in ("tar.exe", "curl.exe", "taskkill.exe", "ping.exe"):
+        assert "%SYS%\\" + tool in text
+    for bare in ("\nfind ", "\ntaskkill ", "\ntimeout "):
+        assert bare not in text
 
 
 def test_spec_bundles_update_script() -> None:
