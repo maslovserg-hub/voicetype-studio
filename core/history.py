@@ -49,6 +49,18 @@ def _connect() -> sqlite3.Connection:
         "CREATE INDEX IF NOT EXISTS idx_transcriptions_user "
         "ON transcriptions(user_id, id DESC)"
     )
+    # «Скачать» in the transcriptor: source URL + where the file landed.
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS downloads (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id     TEXT NOT NULL,
+            url         TEXT NOT NULL,
+            file_path   TEXT NOT NULL,
+            created_at  TEXT NOT NULL
+        )
+        """
+    )
     return conn
 
 
@@ -115,6 +127,34 @@ def recent(scope: UserScope, limit: int = 10) -> List[dict]:
             "source": r[3],
             "created_at": r[4],
         }
+        for r in rows
+    ]
+
+
+def add_download(user_id: str, url: str, file_path: str) -> int:
+    """Save a finished «Скачать» job. Returns the new row id."""
+    with closing(_connect()) as conn:
+        cur = conn.execute(
+            """INSERT INTO downloads (user_id, url, file_path, created_at)
+               VALUES (?, ?, ?, ?)""",
+            (user_id, url, file_path, datetime.now().isoformat(timespec="seconds")),
+        )
+        conn.commit()
+        new_id = cur.lastrowid
+        logger.info("history.add_download user=%s id=%d", user_id, new_id)
+        return new_id
+
+
+def recent_downloads(user_id: str, limit: int = 10) -> List[dict]:
+    """Most recent downloads of ``user_id``, newest first."""
+    with closing(_connect()) as conn:
+        rows = conn.execute(
+            """SELECT id, url, file_path, created_at FROM downloads
+               WHERE user_id = ? ORDER BY id DESC LIMIT ?""",
+            (user_id, limit),
+        ).fetchall()
+    return [
+        {"id": r[0], "url": r[1], "file_path": r[2], "created_at": r[3]}
         for r in rows
     ]
 

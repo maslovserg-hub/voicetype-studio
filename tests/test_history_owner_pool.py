@@ -80,3 +80,19 @@ def test_is_owner_checks_first_whitelist_id_only() -> None:
 
     empty = Settings(whitelist_ids=[])
     assert is_owner(empty, 111) is False
+
+
+def test_downloads_newest_first_and_per_user(fresh_history) -> None:
+    history.add_download("desktop", "https://youtu.be/a", "C:/dl/a.mp4")
+    history.add_download("123", "https://youtu.be/x", "C:/dl/x.mp4")
+    history.add_download("desktop", "https://youtu.be/b", "C:/dl/b.mp4")
+
+    rows = history.recent_downloads("desktop", limit=10)
+    assert [r["url"] for r in rows] == ["https://youtu.be/b", "https://youtu.be/a"]
+    assert rows[0]["file_path"] == "C:/dl/b.mp4"
+    assert rows[0]["created_at"]
+
+
+def test_downloads_do_not_leak_into_transcriptions(fresh_history) -> None:
+    history.add_download("desktop", "https://youtu.be/a", "C:/dl/a.mp4")
+    assert history.recent("desktop") == []

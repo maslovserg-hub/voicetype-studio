@@ -40,6 +40,8 @@ class Settings:
     # you're on Yandex Browser (yt-dlp doesn't support it directly) or your
     # Chrome version is bitten by yt-dlp issue #10927.
     youtube_cookies_file: str = ""
+    # Where «Скачать» saves files. Empty = the system Downloads folder.
+    download_dir: str = ""
 
     def api_key_for(self, provider: str) -> str:
         return (self.api_keys.get(provider) or "").strip()

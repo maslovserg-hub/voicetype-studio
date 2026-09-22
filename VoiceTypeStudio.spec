@@ -23,6 +23,8 @@ datas = [
     ('assets/icon_256.png', 'assets'),
     # Bot welcome photo — sent on /start in Telegram.
     ('assets/bot.png', 'assets'),
+    # Update script — «Обновить» in Настройки copies it to TEMP and runs it.
+    ('tools/VoiceTypeStudio-Update.bat', 'tools'),
 ]
 binaries = []
 hiddenimports = [

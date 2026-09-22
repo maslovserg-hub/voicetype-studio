@@ -4,7 +4,9 @@ Top section: a scrollable feed of :class:`MessageWidget` bubbles, one per
 submitted task. Bottom section: an :class:`InputBar` with file-picker, URL
 field, Скачать / Старт buttons and a drop zone overlay (tkinterdnd2).
 Старт runs the full transcription pipeline; Скачать only saves the source
-file into the user's Downloads folder.
+file into the folder from Settings (the user's Downloads by default).
+Toolbar: «История» toggles a side panel with past transcriptions and
+downloads, «Настройки» opens the settings window.
 
 Threading
 ---------
@@ -51,6 +53,7 @@ from ._clipboard_menu import attach_clipboard_menu
 from ._format_dispatch import FormatResult, deliver_format
 from ._icons import as_ctk_image, make_attach_icon
 from ._message_widget import MessageWidget
+from .history_panel import HistoryPanel
 
 logger = logging.getLogger(__name__)
 
@@ -198,6 +201,7 @@ class TranscriptorWindow(ctk.CTkToplevel):
     """Chat-style window for file/URL transcriptions."""
 
     DESKTOP_USER_ID = "desktop"
+    MIN_FEED_W = 720  # fits a bubble's row of format buttons
 
     def __init__(
         self,
@@ -206,6 +210,7 @@ class TranscriptorWindow(ctk.CTkToplevel):
         bot_loop: asyncio.AbstractEventLoop,
         asr_executor: Any,  # ThreadPoolExecutor — not strictly required here
         settings: Settings,
+        on_open_settings: Optional[Callable[[], None]] = None,
     ):
         super().__init__(master)
         self.title("VoiceType Studio — Транскриптор")
@@ -218,10 +223,42 @@ class TranscriptorWindow(ctk.CTkToplevel):
 
         self._tasks: dict[str, TranscriptionTask] = {}
         self._event_queue: "queue.Queue[tuple]" = queue.Queue()
+        self._history_open = False
+        self._grown_by = 0  # px the window widened to fit the panel
+
+        # --- toolbar: История / Настройки ---------------------------
+        toolbar = ctk.CTkFrame(self, fg_color="transparent")
+        toolbar.pack(fill="x", padx=10, pady=(10, 0))
+        self._history_btn = ctk.CTkButton(
+            toolbar, text="☰ История", width=110,
+            command=self.toggle_history,
+        )
+        self._history_btn.pack(side="left")
+        if on_open_settings is not None:
+            ctk.CTkButton(
+                toolbar, text="⚙ Настройки", width=110,
+                fg_color="transparent", border_width=1,
+                text_color=("gray10", "gray90"),
+                command=on_open_settings,
+            ).pack(side="right")
+
+        # --- body: [history panel] + feed ---------------------------
+        # grid, not pack: CTkScrollableFrame packs an inner wrapper, so
+        # ``pack(before=self._feed)`` can't slot the panel in front of it.
+        body = ctk.CTkFrame(self, fg_color="transparent")
+        body.pack(fill="both", expand=True, padx=10, pady=(10, 0))
+        body.grid_rowconfigure(0, weight=1)
+        body.grid_columnconfigure(1, weight=1)
+
+        self._history_panel = HistoryPanel(
+            body,
+            on_open=self._open_history_row,
+            get_settings=lambda: self.settings,
+        )
 
         # --- feed ----------------------------------------------------
-        self._feed = ctk.CTkScrollableFrame(self)
-        self._feed.pack(fill="both", expand=True, padx=10, pady=(10, 0))
+        self._feed = ctk.CTkScrollableFrame(body)
+        self._feed.grid(row=0, column=1, sticky="nsew")
 
         self._empty_hint = ctk.CTkLabel(
             self._feed,
@@ -261,6 +298,44 @@ class TranscriptorWindow(ctk.CTkToplevel):
         self.deiconify()
         self.lift()
         self.focus_force()
+
+    def toggle_history(self) -> None:
+        """Show/hide the history panel, widening the window if the feed
+        would otherwise get squeezed below :attr:`MIN_FEED_W`."""
+        if self._history_open:
+            self._history_panel.grid_remove()
+            self._history_open = False
+            if self._grown_by:
+                width = self._reverse_window_scaling(self.winfo_width())
+                self._resize_width(width - self._grown_by)
+                self._grown_by = 0
+            return
+
+        self._history_panel.refresh()
+        self._history_panel.grid(row=0, column=0, sticky="ns", padx=(0, 10))
+        self._history_open = True
+        # winfo_* report physical px, CTk's geometry() takes logical px
+        # and applies DPI scaling itself — convert before comparing.
+        width = self._reverse_window_scaling(self.winfo_width())
+        needed = self.MIN_FEED_W + HistoryPanel.WIDTH + 40
+        if width < needed:
+            room = self._reverse_window_scaling(
+                self.winfo_screenwidth() - self.winfo_x()
+            )
+            target = min(needed, max(width, room))
+            self._grown_by = target - width
+            self._resize_width(target)
+
+    def _resize_width(self, width: int) -> None:
+        height = self._reverse_window_scaling(self.winfo_height())
+        self.geometry(f"{width}x{height}")
+
+    def _open_history_row(self, row: dict, segments: list[Segment]) -> None:
+        self.restore_from_history(
+            source_label=row.get("label", "(история)"),
+            source=row.get("source", ""),
+            segments=segments,
+        )
 
     def submit_external(self, source: str) -> None:
         """Programmatic entry-point — same as if the user typed in the bar."""
@@ -390,9 +465,16 @@ class TranscriptorWindow(ctk.CTkToplevel):
     # ----- async pipeline ----------------------------------------------
 
     async def _run_download(self, task: TranscriptionTask) -> None:
-        """Download only — no WAV, no ASR, no history, no cleanup."""
+        """Download only — no WAV, no ASR, no cleanup. Logged to the
+        «Скачанное» history tab."""
         try:
             self._post(("progress", task.task_id, "Скачиваю…", 0))
+            dest_dir, fell_back = download_target(self.settings)
+            if fell_back:
+                self._post((
+                    "toast",
+                    "Папка для скачивания не найдена — сохраняю в «Загрузки».",
+                ))
 
             def dl_cb(percent: int, status: str, _tid=task.task_id) -> None:
                 # Cap at 99: with separate video+audio streams yt-dlp
@@ -402,8 +484,16 @@ class TranscriptorWindow(ctk.CTkToplevel):
                 self._post(("progress", _tid, status, min(99, percent)))
 
             path = await Downloader.download_original(
-                task.source, _downloads_dir(), progress_callback=dl_cb,
+                task.source, dest_dir, progress_callback=dl_cb,
             )
+            try:
+                history.add_download(
+                    user_id=self.DESKTOP_USER_ID,
+                    url=str(task.source),
+                    file_path=str(path),
+                )
+            except Exception:
+                logger.exception("Failed to write download row for task %s", task.task_id)
             self._post(("downloaded", task.task_id, path))
         except Exception as e:
             logger.exception("Download task %s failed", task.task_id)
@@ -548,6 +638,7 @@ class TranscriptorWindow(ctk.CTkToplevel):
                 task.segments = segments
                 task.status = "done"
                 task.widget.mark_done()
+            self._history_panel.refresh()
         elif kind == "downloaded":
             _, task_id, path = event
             task = self._tasks.get(task_id)
@@ -555,6 +646,9 @@ class TranscriptorWindow(ctk.CTkToplevel):
                 task.status = "done"
                 task.progress = 100
                 task.widget.mark_downloaded(path)
+            self._history_panel.refresh()
+        elif kind == "toast":
+            self._show_toast(event[1])
         elif kind == "error":
             _, task_id, message = event
             task = self._tasks.get(task_id)
@@ -652,6 +746,21 @@ def _downloads_dir() -> Path:
             logger.debug("known-folder lookup failed", exc_info=True)
     guess = Path.home() / "Downloads"
     return guess if guess.is_dir() else Path.home()
+
+
+def download_target(settings: Settings) -> tuple[Path, bool]:
+    """Folder for «Скачать» and whether we fell back to Downloads.
+
+    The fallback kicks in when the configured folder is gone (unplugged
+    drive, deleted folder) — the download still goes through.
+    """
+    raw = (settings.download_dir or "").strip()
+    if not raw:
+        return _downloads_dir(), False
+    path = Path(raw)
+    if path.is_dir():
+        return path, False
+    return _downloads_dir(), True
 
 
 def _looks_like_url(value: str) -> bool:

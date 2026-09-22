@@ -21,6 +21,8 @@ from typing import Awaitable, Callable, Optional
 import customtkinter as ctk
 
 from core import Settings
+from core import updater
+from core.version import __version__
 
 from ._clipboard_menu import attach_clipboard_menu
 
@@ -85,6 +87,8 @@ async def validate_telegram_token(token: str) -> tuple[bool, str]:
     """
     import aiohttp
 
+    from core.http import client_session
+
     cleaned = (token or "").strip()
     if not cleaned:
         return False, "Пустой токен"
@@ -92,7 +96,7 @@ async def validate_telegram_token(token: str) -> tuple[bool, str]:
     url = f"https://api.telegram.org/bot{cleaned}/getMe"
     timeout = aiohttp.ClientTimeout(total=10)
     try:
-        async with aiohttp.ClientSession(timeout=timeout) as session:
+        async with client_session(timeout=timeout) as session:
             async with session.get(url) as resp:
                 status = resp.status
                 try:
@@ -125,6 +129,7 @@ class SettingsWindow(ctk.CTkToplevel):
             Callable[[str], Awaitable[tuple[bool, str]]]
         ] = None,
         bot_loop: Optional[asyncio.AbstractEventLoop] = None,
+        on_start_update: Optional[Callable[[], None]] = None,
     ):
         super().__init__(master)
         self.title("VoiceType Studio — Настройки")
@@ -136,6 +141,7 @@ class SettingsWindow(ctk.CTkToplevel):
         self._on_save = on_save
         self._token_validator = token_validator or validate_telegram_token
         self._bot_loop = bot_loop
+        self._on_start_update = on_start_update
 
         # Scrollable body so smaller screens still see Save/Cancel.
         body = ctk.CTkScrollableFrame(self)
@@ -144,7 +150,9 @@ class SettingsWindow(ctk.CTkToplevel):
         self._build_ai_section(body, settings)
         self._build_tts_section(body, settings)
         self._build_youtube_section(body, settings)
+        self._build_download_section(body, settings)
         self._build_telegram_section(body, settings)
+        self._build_update_section(body)
 
         # Footer (sticky).
         footer = ctk.CTkFrame(self)
@@ -259,6 +267,41 @@ class SettingsWindow(ctk.CTkToplevel):
             self._cookies_entry.delete(0, "end")
             self._cookies_entry.insert(0, path)
 
+    def _build_download_section(self, parent, s: Settings) -> None:
+        _section_header(parent, "Скачивание")
+        _row_label(parent, "Папка для кнопки «Скачать» (пусто — «Загрузки»)")
+
+        row = ctk.CTkFrame(parent, fg_color="transparent")
+        row.pack(fill="x", pady=(0, 8))
+
+        self._download_dir_entry = ctk.CTkEntry(
+            row, placeholder_text="Загрузки (по умолчанию)",
+        )
+        self._download_dir_entry.insert(0, s.download_dir or "")
+        self._download_dir_entry.pack(side="left", fill="x", expand=True, padx=(0, 4))
+        attach_clipboard_menu(self._download_dir_entry)
+
+        ctk.CTkButton(
+            row, text="Выбрать…", width=90,
+            command=self._on_pick_download_dir,
+        ).pack(side="left", padx=2)
+        ctk.CTkButton(
+            row, text="По умолчанию", width=110,
+            command=lambda: self._download_dir_entry.delete(0, "end"),
+        ).pack(side="left", padx=2)
+
+    def _on_pick_download_dir(self) -> None:
+        from tkinter import filedialog
+
+        path = filedialog.askdirectory(
+            title="Куда сохранять скачанные файлы",
+            initialdir=self._download_dir_entry.get().strip() or None,
+            parent=self,
+        )
+        if path:
+            self._download_dir_entry.delete(0, "end")
+            self._download_dir_entry.insert(0, path)
+
     def _build_telegram_section(self, parent, s: Settings) -> None:
         _section_header(parent, "Telegram-бот")
 
@@ -297,6 +340,89 @@ class SettingsWindow(ctk.CTkToplevel):
 
         # Initial visibility.
         self._on_bot_enabled_changed()
+
+    def _build_update_section(self, parent) -> None:
+        _section_header(parent, "Обновление")
+
+        row = ctk.CTkFrame(parent, fg_color="transparent")
+        row.pack(fill="x", pady=(0, 8))
+        ctk.CTkLabel(
+            row, text=f"Установлена версия {__version__}", anchor="w",
+        ).pack(side="left")
+        self._check_update_btn = ctk.CTkButton(
+            row, text="Проверить обновления", width=180,
+            command=self._on_check_updates,
+        )
+        self._check_update_btn.pack(side="right")
+
+        self._update_status = ctk.CTkLabel(parent, text="", anchor="w")
+        self._update_status.pack(fill="x", pady=(0, 4))
+        self._install_update_btn = ctk.CTkButton(
+            parent, text="", command=self._on_install_update,
+        )  # packed only once a newer version is found
+
+    def _on_check_updates(self) -> None:
+        self._check_update_btn.configure(state="disabled")
+        self._update_status.configure(text="Проверяю…", text_color="#aaaaaa")
+
+        async def _check() -> tuple[bool, str]:
+            try:
+                latest = await updater.latest_version()
+            except Exception as exc:
+                return False, f"Не удалось проверить: {exc}"
+            if updater.is_newer(latest):
+                return True, latest
+            return False, "У вас последняя версия."
+
+        if self._bot_loop is not None:
+            fut = asyncio.run_coroutine_threadsafe(_check(), self._bot_loop)
+            self.after(100, lambda: self._poll_update_future(fut))
+        else:
+            import threading
+
+            def _runner() -> None:
+                found, payload = asyncio.run(_check())
+                self.after(0, lambda: self._show_update_result(found, payload))
+
+            threading.Thread(target=_runner, daemon=True).start()
+
+    def _poll_update_future(self, fut) -> None:
+        if not fut.done():
+            self.after(100, lambda: self._poll_update_future(fut))
+            return
+        try:
+            found, payload = fut.result()
+        except Exception as e:
+            found, payload = False, f"Ошибка: {e}"
+        self._show_update_result(found, payload)
+
+    def _show_update_result(self, found: bool, payload: str) -> None:
+        self._check_update_btn.configure(state="normal")
+        if not found:
+            self._update_status.configure(text=payload, text_color="#aaaaaa")
+            return
+        self._update_status.configure(
+            text=(
+                f"Доступна версия {payload}. Программа закроется, скачает "
+                "около 220 МБ и запустится снова."
+            ),
+            text_color="#3ea55a",
+        )
+        self._install_update_btn.configure(text=f"Обновить до {payload}")
+        self._install_update_btn.pack(fill="x", pady=(0, 8))
+
+    def _on_install_update(self) -> None:
+        if not updater.start_update():
+            self._update_status.configure(
+                text=(
+                    "Не удалось запустить обновление — в сборке нет скрипта "
+                    "(запущено из исходников?)."
+                ),
+                text_color="#ff6b6b",
+            )
+            return
+        if self._on_start_update is not None:
+            self._on_start_update()
 
     # ----- callbacks ----------------------------------------------------
 
@@ -381,6 +507,7 @@ class SettingsWindow(ctk.CTkToplevel):
             bot_token=self._token_entry.get().strip(),
             whitelist_ids=parse_whitelist_ids(self._whitelist_entry.get()),
             youtube_cookies_file=self._cookies_entry.get().strip(),
+            download_dir=self._download_dir_entry.get().strip(),
         )
 
 
@@ -393,11 +520,13 @@ def open_settings_window(
     settings: Settings,
     on_save: Callable[[Settings], None],
     bot_loop: Optional[asyncio.AbstractEventLoop] = None,
+    on_start_update: Optional[Callable[[], None]] = None,
 ) -> SettingsWindow:
     """Build, show, and return the window. Caller keeps the reference so it
     isn't garbage-collected before the user closes it."""
     win = SettingsWindow(
         master, settings=settings, on_save=on_save, bot_loop=bot_loop,
+        on_start_update=on_start_update,
     )
     win.lift()
     win.focus_force()

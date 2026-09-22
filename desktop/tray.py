@@ -1,7 +1,7 @@
 """System-tray icon and right-click menu.
 
-Per spec FR-2 the menu has four real entries: Транскриптор, Настройки,
-Автозапуск (toggle), Выход. ``About`` is a separator-style label only.
+The menu stays short: Транскриптор (История and Настройки live inside
+that window), Автозапуск (toggle), data-folder helpers, Выход.
 
 The tray runs in its own thread (``pystray.Icon.run_detached``); callbacks
 fire on that thread, so anything that touches Tk widgets must be marshalled
@@ -45,12 +45,10 @@ def _make_icon_image():
 def build_tray(
     *,
     on_open_transcriptor: Callable[[], None],
-    on_open_settings: Callable[[], None],
     on_quit: Callable[[], None],
     on_about: Callable[[], None] | None = None,
     on_open_data_folder: Callable[[], None] | None = None,
     on_clean_temp: Callable[[], None] | None = None,
-    on_open_history: Callable[[], None] | None = None,
 ):
     """Build a configured ``pystray.Icon``. Caller invokes ``.run_detached()``.
 
@@ -84,21 +82,14 @@ def build_tray(
     items = [
         pystray.MenuItem("VoiceType Studio", None, enabled=False),
         pystray.Menu.SEPARATOR,
-        pystray.MenuItem("Открыть транскриптор", _wrap(on_open_transcriptor)),
+        pystray.MenuItem("Транскриптор", _wrap(on_open_transcriptor)),
+        pystray.Menu.SEPARATOR,
+        pystray.MenuItem(
+            "Запускать с Windows",
+            _toggle_autostart,
+            checked=_autostart_checked,
+        ),
     ]
-    if on_open_history is not None:
-        items.append(pystray.MenuItem("История…", _wrap(on_open_history)))
-    items.extend(
-        [
-            pystray.MenuItem("Настройки…", _wrap(on_open_settings)),
-            pystray.Menu.SEPARATOR,
-            pystray.MenuItem(
-                "Запускать с Windows",
-                _toggle_autostart,
-                checked=_autostart_checked,
-            ),
-        ]
-    )
     if on_open_data_folder is not None:
         items.append(pystray.MenuItem(
             "Папка с данными", _wrap(on_open_data_folder),

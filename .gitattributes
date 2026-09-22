@@ -1,0 +1,2 @@
+# .bat must keep CRLF or cmd mis-parses labels and goto.
+*.bat text eol=crlf

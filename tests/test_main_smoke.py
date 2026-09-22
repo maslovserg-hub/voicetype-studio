@@ -35,8 +35,6 @@ def test_main_module_imports() -> None:
         "shutdown",
         "_open_transcriptor",
         "_open_settings",
-        "_open_history",
-        "_restore_history_row",
         "_on_settings_saved",
         "_transcribe_for_dictation",
         "_start_bot",

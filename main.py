@@ -57,7 +57,6 @@ from bot.main import start_bot_polling, stop_bot_polling
 from core import Downloader, Settings, Transcriber, config, settings_io
 from desktop import single_instance
 from desktop.dictation import DictationListener
-from desktop.history_window import open_history_window
 from desktop.overlay import Overlay
 from desktop.settings_window import open_settings_window
 from desktop.transcriptor_window import TranscriptorWindow
@@ -133,15 +132,12 @@ class App:
 
         self._transcriptor: Optional[TranscriptorWindow] = None
         self._settings_window = None  # CTkToplevel | None
-        self._history_window = None  # CTkToplevel | None
 
         self.tray = build_tray(
             on_open_transcriptor=self._open_transcriptor_safe,
-            on_open_settings=self._open_settings_safe,
             on_quit=self._quit_safe,
             on_open_data_folder=self._open_data_folder,
             on_clean_temp=self._clean_temp_files,
-            on_open_history=self._open_history_safe,
         )
 
         # --- optional Telegram bot -------------------------------------
@@ -190,12 +186,6 @@ class App:
     def _open_transcriptor_safe(self) -> None:
         self.root.after(0, self._open_transcriptor)
 
-    def _open_settings_safe(self) -> None:
-        self.root.after(0, self._open_settings)
-
-    def _open_history_safe(self) -> None:
-        self.root.after(0, self._open_history)
-
     def _quit_safe(self) -> None:
         self.root.after(0, self._quit)
 
@@ -209,6 +199,7 @@ class App:
                 bot_loop=self.bot_loop,
                 asr_executor=self.asr_executor,
                 settings=self.settings,
+                on_open_settings=self._open_settings,
             )
         else:
             # Re-syncs settings in case they changed since last open.
@@ -220,46 +211,19 @@ class App:
             self._settings_window.lift()
             self._settings_window.focus_force()
             return
+        # Opened from the Transcriptor's «Настройки» button — parent it
+        # there so the (transient) window stays on top of it instead of
+        # behind, as it did when parented to the hidden root.
+        parent = self._transcriptor
+        if parent is None or not _winfo_alive(parent):
+            parent = self.root
         self._settings_window = open_settings_window(
-            self.root,
+            parent,
             settings=self.settings,
             on_save=self._on_settings_saved,
             bot_loop=self.bot_loop,
+            on_start_update=self._quit,
         )
-
-    def _open_history(self) -> None:
-        if self._history_window is not None and _winfo_alive(self._history_window):
-            try:
-                self._history_window.lift()
-                self._history_window.focus_force()
-                # Refresh in case new rows landed since the window was opened.
-                self._history_window.refresh()
-            except Exception:
-                pass
-            return
-        self._history_window = open_history_window(
-            self.root,
-            on_open=self._restore_history_row,
-            settings=self.settings,
-        )
-
-    def _restore_history_row(self, row: dict, segments) -> None:
-        """Push a stored transcription back into the Transcriptor window.
-
-        Opens the Transcriptor if it isn't open yet — same code path as
-        the tray's "Открыть транскриптор" entry.
-        """
-        self._open_transcriptor()
-        if self._transcriptor is None:
-            return
-        try:
-            self._transcriptor.restore_from_history(
-                source_label=row.get("label", "(история)"),
-                source=row.get("source", ""),
-                segments=segments,
-            )
-        except Exception:
-            logger.exception("Failed to restore history row %s", row.get("id"))
 
     def _on_settings_saved(self, new_settings: Settings) -> None:
         old = self.settings

@@ -106,3 +106,25 @@ def test_window_has_restore_from_history() -> None:
         assert (
             sig.parameters[required].kind == inspect.Parameter.KEYWORD_ONLY
         ), f"{required} must be keyword-only"
+
+
+def test_download_target_uses_configured_folder(tmp_path) -> None:
+    from core import Settings
+    from desktop.transcriptor_window import download_target
+
+    assert download_target(Settings(download_dir=str(tmp_path))) == (tmp_path, False)
+
+
+def test_download_target_empty_means_system_downloads() -> None:
+    from core import Settings
+    from desktop.transcriptor_window import _downloads_dir, download_target
+
+    assert download_target(Settings(download_dir="")) == (_downloads_dir(), False)
+
+
+def test_download_target_missing_folder_falls_back(tmp_path) -> None:
+    from core import Settings
+    from desktop.transcriptor_window import _downloads_dir, download_target
+
+    gone = tmp_path / "unplugged"
+    assert download_target(Settings(download_dir=str(gone))) == (_downloads_dir(), True)

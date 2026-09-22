@@ -116,16 +116,17 @@ def test_transcriber_has_transcribe_array() -> None:
     assert callable(Transcriber.transcribe_array)
 
 
-def test_build_tray_accepts_history_kwarg() -> None:
-    """Tray menu now wires the History window — keep the contract stable."""
-    import inspect
-
+def test_tray_menu_has_single_transcriptor_entry() -> None:
+    """История and Настройки moved into the Transcriptor window — the tray
+    keeps one entry point for it."""
     from desktop.tray import build_tray
 
-    sig = inspect.signature(build_tray)
-    assert "on_open_history" in sig.parameters
-    # Optional — older callers (and tests that mock tray) may omit it.
-    assert sig.parameters["on_open_history"].default is None
+    noop = lambda: None  # noqa: E731
+    icon = build_tray(on_open_transcriptor=noop, on_quit=noop)
+    texts = [item.text for item in icon.menu.items if item.text]
+    assert "Транскриптор" in texts
+    for gone in ("Открыть транскриптор", "История…", "Настройки…"):
+        assert gone not in texts
 
 
 def test_dictation_watchdog_reopens_dead_stream() -> None:

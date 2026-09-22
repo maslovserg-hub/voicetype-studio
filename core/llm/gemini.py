@@ -14,6 +14,7 @@ from typing import ClassVar
 
 import aiohttp
 
+from ..http import client_session
 from .base import KNOWN_PROVIDERS, LLMProvider, SummaryMode
 
 logger = logging.getLogger(__name__)
@@ -68,7 +69,7 @@ class GeminiProvider(LLMProvider):
         )
 
         timeout = aiohttp.ClientTimeout(total=self.REQUEST_TIMEOUT_S)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
+        async with client_session(timeout=timeout) as session:
             async with session.post(
                 url, headers=headers, params=params, json=payload
             ) as resp:

@@ -14,6 +14,7 @@ from typing import ClassVar
 
 import aiohttp
 
+from ..http import client_session
 from .base import KNOWN_PROVIDERS, LLMProvider, SummaryMode
 
 logger = logging.getLogger(__name__)
@@ -64,7 +65,7 @@ class AnthropicProvider(LLMProvider):
         )
 
         timeout = aiohttp.ClientTimeout(total=self.REQUEST_TIMEOUT_S)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
+        async with client_session(timeout=timeout) as session:
             async with session.post(self.api_url, headers=headers, json=payload) as resp:
                 if resp.status != 200:
                     body = await resp.text()

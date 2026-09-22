@@ -12,6 +12,7 @@ import aiofiles
 import yt_dlp
 
 from .config import config
+from .http import client_session
 from .cookies_extractor import (
     export_cookies_for_domains,
     list_installed_chromium_browsers,
@@ -142,7 +143,7 @@ class Downloader:
         """Download from Yandex.Disk public link."""
         api_url = "https://cloud-api.yandex.net/v1/disk/public/resources/download"
 
-        async with aiohttp.ClientSession() as session:
+        async with client_session() as session:
             async with session.get(api_url, params={"public_key": url}) as resp:
                 if resp.status != 200:
                     raise ValueError(f"Failed to get Yandex.Disk download URL: {resp.status}")
@@ -169,7 +170,7 @@ class Downloader:
         filename = _extract_filename(url) or "direct_file"
         file_path = config.temp_dir / filename
 
-        async with aiohttp.ClientSession() as session:
+        async with client_session() as session:
             async with session.get(url, timeout=aiohttp.ClientTimeout(total=config.download_timeout_s)) as resp:
                 if resp.status != 200:
                     raise ValueError(f"Failed to download file: {resp.status}")

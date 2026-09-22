@@ -42,6 +42,12 @@ transcriber_bot_robot_windows_ios_icon_package.zip
 _icon_pack_v2/
 transcriber_bot_icon_pack_windows_macos.zip
 
+# Scratch files from work sessions (previews, intermediate output)
+memory/temp/
+
+# Release staging — Setup.exe pulled from a previous release
+dist_release/
+
 # Runtime data
 data/
 tmp/
