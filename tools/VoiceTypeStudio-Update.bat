@@ -19,6 +19,10 @@ echo   Обновление VoiceType Studio
 echo   ===========================
 echo.
 
+rem Some installs were unpacked by hand with Explorer's «Extract all»,
+rem which adds one more VoiceTypeStudio\ level. Update them in place.
+if not exist "%DIR%\VoiceTypeStudio.exe" if exist "%DIR%\VoiceTypeStudio\VoiceTypeStudio.exe" set "DIR=%DIR%\VoiceTypeStudio"
+
 if not exist "%DIR%\VoiceTypeStudio.exe" (
     echo   Программа не найдена в папке:
     echo   %DIR%
