@@ -152,3 +152,101 @@ def test_token_validator_live() -> None:
     ok, msg = asyncio.run(validate_telegram_token(os.environ["TG_BOT_TOKEN"]))
     assert ok, f"validate_telegram_token said no: {msg}"
     assert "@" in msg
+
+
+# --- window construction (needs a real Tk root) --------------------------
+
+
+@pytest.fixture
+def ctk_root():
+    """Hidden CTk root, torn down after the test. Skips if Tk can't be
+    constructed in this environment (headless CI, no display driver)."""
+    try:
+        import customtkinter as ctk
+    except Exception as e:  # pragma: no cover
+        pytest.skip(f"customtkinter unavailable: {e}")
+    try:
+        root = ctk.CTk()
+    except Exception as e:  # pragma: no cover
+        pytest.skip(f"Cannot create Tk root in this env: {e}")
+    root.withdraw()
+    yield root
+    try:
+        root.destroy()
+    except Exception:
+        pass
+
+
+def _all_widget_texts(widget) -> list[str]:
+    """Recursively collect every ``cget("text")`` in the widget tree — used
+    to assert a section header / label is present or absent."""
+    out: list[str] = []
+    try:
+        out.append(widget.cget("text"))
+    except Exception:
+        pass
+    for child in widget.winfo_children():
+        out.extend(_all_widget_texts(child))
+    return out
+
+
+def _make_settings(**overrides):
+    from core import Settings
+
+    return Settings(**overrides)
+
+
+def test_settings_window_has_no_update_section(ctk_root) -> None:
+    """The «Обновление» section moved to the About window entirely."""
+    from desktop.settings_window import SettingsWindow
+
+    win = SettingsWindow(
+        ctk_root, settings=_make_settings(), on_save=lambda s: None,
+    )
+    texts = _all_widget_texts(win)
+    assert "Обновление" not in texts
+    assert not hasattr(win, "_build_update_section")
+    assert "Обслуживание" in texts
+
+
+def test_settings_window_maintenance_buttons_trigger_callbacks(ctk_root) -> None:
+    """«Открыть папку с данными» / «Очистить временные файлы» fire their
+    callbacks immediately — no Save/Cancel round-trip, same as the old
+    «Проверить токен» button."""
+    from desktop.settings_window import SettingsWindow
+
+    opened = []
+    cleaned = []
+
+    win = SettingsWindow(
+        ctk_root,
+        settings=_make_settings(),
+        on_save=lambda s: None,
+        on_open_data_folder=lambda: opened.append(True),
+        on_clean_temp=lambda: cleaned.append(True),
+    )
+
+    win._on_open_data_folder_clicked()
+    assert opened == [True]
+
+    win._on_clean_temp_clicked()
+    assert cleaned == [True]
+    assert "удалены" in win._maintenance_status.cget("text").lower()
+
+
+def test_settings_window_maintenance_clean_temp_reports_error(ctk_root) -> None:
+    from desktop.settings_window import SettingsWindow
+
+    def _boom():
+        raise RuntimeError("disk locked")
+
+    win = SettingsWindow(
+        ctk_root,
+        settings=_make_settings(),
+        on_save=lambda s: None,
+        on_clean_temp=_boom,
+    )
+    win._on_clean_temp_clicked()
+    status = win._maintenance_status.cget("text")
+    assert "не удалось" in status.lower()
+    assert "disk locked" in status

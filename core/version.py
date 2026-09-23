@@ -6,4 +6,4 @@ Bumped by hand for every release; the tag on GitHub must match
 
 from __future__ import annotations
 
-__version__ = "1.0.3"
+__version__ = "1.0.4"

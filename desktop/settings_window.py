@@ -21,8 +21,6 @@ from typing import Awaitable, Callable, Optional
 import customtkinter as ctk
 
 from core import Settings
-from core import updater
-from core.version import __version__
 
 from ._clipboard_menu import attach_clipboard_menu
 
@@ -129,7 +127,8 @@ class SettingsWindow(ctk.CTkToplevel):
             Callable[[str], Awaitable[tuple[bool, str]]]
         ] = None,
         bot_loop: Optional[asyncio.AbstractEventLoop] = None,
-        on_start_update: Optional[Callable[[], None]] = None,
+        on_open_data_folder: Optional[Callable[[], None]] = None,
+        on_clean_temp: Optional[Callable[[], None]] = None,
     ):
         super().__init__(master)
         self.title("VoiceType Studio — Настройки")
@@ -141,7 +140,8 @@ class SettingsWindow(ctk.CTkToplevel):
         self._on_save = on_save
         self._token_validator = token_validator or validate_telegram_token
         self._bot_loop = bot_loop
-        self._on_start_update = on_start_update
+        self._on_open_data_folder = on_open_data_folder
+        self._on_clean_temp = on_clean_temp
 
         # Scrollable body so smaller screens still see Save/Cancel.
         body = ctk.CTkScrollableFrame(self)
@@ -152,7 +152,7 @@ class SettingsWindow(ctk.CTkToplevel):
         self._build_youtube_section(body, settings)
         self._build_download_section(body, settings)
         self._build_telegram_section(body, settings)
-        self._build_update_section(body)
+        self._build_maintenance_section(body)
 
         # Footer (sticky).
         footer = ctk.CTkFrame(self)
@@ -341,88 +341,48 @@ class SettingsWindow(ctk.CTkToplevel):
         # Initial visibility.
         self._on_bot_enabled_changed()
 
-    def _build_update_section(self, parent) -> None:
-        _section_header(parent, "Обновление")
+    def _build_maintenance_section(self, parent) -> None:
+        _section_header(parent, "Обслуживание")
 
         row = ctk.CTkFrame(parent, fg_color="transparent")
         row.pack(fill="x", pady=(0, 8))
-        ctk.CTkLabel(
-            row, text=f"Установлена версия {__version__}", anchor="w",
+        ctk.CTkButton(
+            row, text="Открыть папку с данными", width=200,
+            command=self._on_open_data_folder_clicked,
         ).pack(side="left")
-        self._check_update_btn = ctk.CTkButton(
-            row, text="Проверить обновления", width=180,
-            command=self._on_check_updates,
-        )
-        self._check_update_btn.pack(side="right")
+        ctk.CTkButton(
+            row, text="Очистить временные файлы", width=200,
+            command=self._on_clean_temp_clicked,
+        ).pack(side="left", padx=(8, 0))
 
-        self._update_status = ctk.CTkLabel(parent, text="", anchor="w")
-        self._update_status.pack(fill="x", pady=(0, 4))
-        self._install_update_btn = ctk.CTkButton(
-            parent, text="", command=self._on_install_update,
-        )  # packed only once a newer version is found
+        self._maintenance_status = ctk.CTkLabel(parent, text="", anchor="w")
+        self._maintenance_status.pack(fill="x", pady=(0, 4))
 
-    def _on_check_updates(self) -> None:
-        self._check_update_btn.configure(state="disabled")
-        self._update_status.configure(text="Проверяю…", text_color="#aaaaaa")
-
-        async def _check() -> tuple[bool, str]:
-            try:
-                latest = await updater.latest_version()
-            except Exception as exc:
-                return False, f"Не удалось проверить: {exc}"
-            if updater.is_newer(latest):
-                return True, latest
-            return False, "У вас последняя версия."
-
-        if self._bot_loop is not None:
-            fut = asyncio.run_coroutine_threadsafe(_check(), self._bot_loop)
-            self.after(100, lambda: self._poll_update_future(fut))
-        else:
-            import threading
-
-            def _runner() -> None:
-                found, payload = asyncio.run(_check())
-                self.after(0, lambda: self._show_update_result(found, payload))
-
-            threading.Thread(target=_runner, daemon=True).start()
-
-    def _poll_update_future(self, fut) -> None:
-        if not fut.done():
-            self.after(100, lambda: self._poll_update_future(fut))
+    def _on_open_data_folder_clicked(self) -> None:
+        if self._on_open_data_folder is None:
             return
         try:
-            found, payload = fut.result()
-        except Exception as e:
-            found, payload = False, f"Ошибка: {e}"
-        self._show_update_result(found, payload)
+            self._on_open_data_folder()
+        except Exception as exc:
+            logger.exception("on_open_data_folder callback raised")
+            self._maintenance_status.configure(
+                text=f"Не удалось открыть папку: {exc}", text_color="#ff6b6b",
+            )
 
-    def _show_update_result(self, found: bool, payload: str) -> None:
-        self._check_update_btn.configure(state="normal")
-        if not found:
-            self._update_status.configure(text=payload, text_color="#aaaaaa")
+    def _on_clean_temp_clicked(self) -> None:
+        if self._on_clean_temp is None:
             return
-        self._update_status.configure(
-            text=(
-                f"Доступна версия {payload}. Программа закроется, скачает "
-                "около 220 МБ и запустится снова."
-            ),
-            text_color="#3ea55a",
-        )
-        self._install_update_btn.configure(text=f"Обновить до {payload}")
-        self._install_update_btn.pack(fill="x", pady=(0, 8))
-
-    def _on_install_update(self) -> None:
-        if not updater.start_update():
-            self._update_status.configure(
-                text=(
-                    "Не удалось запустить обновление — в сборке нет скрипта "
-                    "(запущено из исходников?)."
-                ),
-                text_color="#ff6b6b",
+        try:
+            self._on_clean_temp()
+        except Exception as exc:
+            logger.exception("on_clean_temp callback raised")
+            self._maintenance_status.configure(
+                text=f"Не удалось очистить: {exc}", text_color="#ff6b6b",
             )
             return
-        if self._on_start_update is not None:
-            self._on_start_update()
+        self._maintenance_status.configure(
+            text="Временные файлы удалены.", text_color="#3ea55a",
+        )
 
     # ----- callbacks ----------------------------------------------------
 
@@ -520,13 +480,14 @@ def open_settings_window(
     settings: Settings,
     on_save: Callable[[Settings], None],
     bot_loop: Optional[asyncio.AbstractEventLoop] = None,
-    on_start_update: Optional[Callable[[], None]] = None,
+    on_open_data_folder: Optional[Callable[[], None]] = None,
+    on_clean_temp: Optional[Callable[[], None]] = None,
 ) -> SettingsWindow:
     """Build, show, and return the window. Caller keeps the reference so it
     isn't garbage-collected before the user closes it."""
     win = SettingsWindow(
         master, settings=settings, on_save=on_save, bot_loop=bot_loop,
-        on_start_update=on_start_update,
+        on_open_data_folder=on_open_data_folder, on_clean_temp=on_clean_temp,
     )
     win.lift()
     win.focus_force()

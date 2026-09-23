@@ -52,8 +52,15 @@ def test_spec_bundles_update_script() -> None:
     assert f"tools/{updater.SCRIPT_NAME}" in spec
 
 
-def test_settings_window_takes_update_callback() -> None:
+def test_about_window_takes_update_callback() -> None:
+    """The update check/install flow lives in the About window now — the
+    Settings window no longer knows about updates at all."""
+    from desktop.about_window import AboutWindow
     from desktop.settings_window import SettingsWindow
 
-    params = inspect.signature(SettingsWindow.__init__).parameters
+    params = inspect.signature(AboutWindow.__init__).parameters
     assert params["on_start_update"].default is None
+
+    assert "on_start_update" not in inspect.signature(
+        SettingsWindow.__init__
+    ).parameters

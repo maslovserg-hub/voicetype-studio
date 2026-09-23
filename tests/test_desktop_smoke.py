@@ -117,8 +117,9 @@ def test_transcriber_has_transcribe_array() -> None:
 
 
 def test_tray_menu_has_single_transcriptor_entry() -> None:
-    """История and Настройки moved into the Transcriptor window — the tray
-    keeps one entry point for it."""
+    """История lives inside the Transcriptor window — the tray keeps one
+    entry point for it. Without the optional callbacks, Настройки and
+    О программе are simply absent (they're opt-in via ``build_tray``)."""
     from desktop.tray import build_tray
 
     noop = lambda: None  # noqa: E731
@@ -126,6 +127,34 @@ def test_tray_menu_has_single_transcriptor_entry() -> None:
     texts = [item.text for item in icon.menu.items if item.text]
     assert "Транскриптор" in texts
     for gone in ("Открыть транскриптор", "История…", "Настройки…"):
+        assert gone not in texts
+
+
+def test_tray_menu_full_shape() -> None:
+    """With every callback wired (as main.py does), the tray menu matches
+    the spec exactly: title / Транскриптор / Настройки / Автозапуск /
+    О программе / Выход — and never «Папка с данными» or «Очистить
+    временные файлы», which moved into Settings → Обслуживание."""
+    from desktop.tray import build_tray
+
+    noop = lambda: None  # noqa: E731
+    icon = build_tray(
+        on_open_transcriptor=noop,
+        on_quit=noop,
+        on_open_settings=noop,
+        on_about=noop,
+    )
+    texts = [item.text for item in icon.menu.items if item.text]
+    for expected in (
+        "VoiceType Studio",
+        "Транскриптор",
+        "Настройки",
+        "Запускать с Windows",
+        "О программе",
+        "Выход",
+    ):
+        assert expected in texts, texts
+    for gone in ("Папка с данными", "Очистить временные файлы"):
         assert gone not in texts
 
 

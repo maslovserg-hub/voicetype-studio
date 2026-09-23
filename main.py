@@ -56,6 +56,7 @@ from tkinterdnd2 import TkinterDnD
 from bot.main import start_bot_polling, stop_bot_polling
 from core import Downloader, Settings, Transcriber, config, settings_io
 from desktop import single_instance
+from desktop.about_window import open_about_window
 from desktop.dictation import DictationListener
 from desktop.overlay import Overlay
 from desktop.settings_window import open_settings_window
@@ -132,12 +133,13 @@ class App:
 
         self._transcriptor: Optional[TranscriptorWindow] = None
         self._settings_window = None  # CTkToplevel | None
+        self._about_window = None  # CTkToplevel | None
 
         self.tray = build_tray(
             on_open_transcriptor=self._open_transcriptor_safe,
             on_quit=self._quit_safe,
-            on_open_data_folder=self._open_data_folder,
-            on_clean_temp=self._clean_temp_files,
+            on_open_settings=self._open_settings_safe,
+            on_about=self._open_about_safe,
         )
 
         # --- optional Telegram bot -------------------------------------
@@ -186,6 +188,12 @@ class App:
     def _open_transcriptor_safe(self) -> None:
         self.root.after(0, self._open_transcriptor)
 
+    def _open_settings_safe(self) -> None:
+        self.root.after(0, self._open_settings)
+
+    def _open_about_safe(self) -> None:
+        self.root.after(0, self._open_about)
+
     def _quit_safe(self) -> None:
         self.root.after(0, self._quit)
 
@@ -211,9 +219,10 @@ class App:
             self._settings_window.lift()
             self._settings_window.focus_force()
             return
-        # Opened from the Transcriptor's «Настройки» button — parent it
-        # there so the (transient) window stays on top of it instead of
-        # behind, as it did when parented to the hidden root.
+        # Opened from the tray or the Transcriptor's «Настройки» button —
+        # parent it to the transcriptor when it's open so the (transient)
+        # window stays on top of it instead of behind, as it did when
+        # parented to the hidden root.
         parent = self._transcriptor
         if parent is None or not _winfo_alive(parent):
             parent = self.root
@@ -221,6 +230,21 @@ class App:
             parent,
             settings=self.settings,
             on_save=self._on_settings_saved,
+            bot_loop=self.bot_loop,
+            on_open_data_folder=self._open_data_folder,
+            on_clean_temp=self._clean_temp_files,
+        )
+
+    def _open_about(self) -> None:
+        if self._about_window is not None and _winfo_alive(self._about_window):
+            self._about_window.lift()
+            self._about_window.focus_force()
+            return
+        parent = self._transcriptor
+        if parent is None or not _winfo_alive(parent):
+            parent = self.root
+        self._about_window = open_about_window(
+            parent,
             bot_loop=self.bot_loop,
             on_start_update=self._quit,
         )

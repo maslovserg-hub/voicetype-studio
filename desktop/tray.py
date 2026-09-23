@@ -1,7 +1,9 @@
 """System-tray icon and right-click menu.
 
-The menu stays short: Транскриптор (История and Настройки live inside
-that window), Автозапуск (toggle), data-folder helpers, Выход.
+The menu stays short: Транскриптор, Настройки, Автозапуск (toggle),
+О программе, Выход. Data-folder / temp-cleanup helpers moved into the
+Settings window's «Обслуживание» section — the tray no longer exposes them
+directly.
 
 The tray runs in its own thread (``pystray.Icon.run_detached``); callbacks
 fire on that thread, so anything that touches Tk widgets must be marshalled
@@ -46,9 +48,8 @@ def build_tray(
     *,
     on_open_transcriptor: Callable[[], None],
     on_quit: Callable[[], None],
+    on_open_settings: Callable[[], None] | None = None,
     on_about: Callable[[], None] | None = None,
-    on_open_data_folder: Callable[[], None] | None = None,
-    on_clean_temp: Callable[[], None] | None = None,
 ):
     """Build a configured ``pystray.Icon``. Caller invokes ``.run_detached()``.
 
@@ -83,21 +84,19 @@ def build_tray(
         pystray.MenuItem("VoiceType Studio", None, enabled=False),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("Транскриптор", _wrap(on_open_transcriptor)),
-        pystray.Menu.SEPARATOR,
-        pystray.MenuItem(
-            "Запускать с Windows",
-            _toggle_autostart,
-            checked=_autostart_checked,
-        ),
     ]
-    if on_open_data_folder is not None:
-        items.append(pystray.MenuItem(
-            "Папка с данными", _wrap(on_open_data_folder),
-        ))
-    if on_clean_temp is not None:
-        items.append(pystray.MenuItem(
-            "Очистить временные файлы", _wrap(on_clean_temp),
-        ))
+    if on_open_settings is not None:
+        items.append(pystray.MenuItem("Настройки", _wrap(on_open_settings)))
+    items.extend(
+        [
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem(
+                "Запускать с Windows",
+                _toggle_autostart,
+                checked=_autostart_checked,
+            ),
+        ]
+    )
     if on_about is not None:
         items.append(pystray.MenuItem("О программе", _wrap(on_about)))
     items.extend(
