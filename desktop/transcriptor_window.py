@@ -60,7 +60,8 @@ logger = logging.getLogger(__name__)
 
 
 TaskStatus = Literal[
-    "queued", "downloading", "converting", "transcribing", "done", "error"
+    "queued", "downloading", "converting", "transcribing", "done", "error",
+    "stopped",
 ]
 
 
@@ -76,6 +77,8 @@ class TranscriptionTask:
     # "ru" → GigaAM; "other" → YouTube subtitles, else Yandex SpeechKit.
     lang: str = "ru"
     error: Optional[str] = None
+    # concurrent.futures.Future of the running pipeline — ⏹ Стоп cancels it.
+    future: Any = None
 
 
 # --- input parsing helpers (pure, easy to unit-test) ---------------------
@@ -418,7 +421,7 @@ class TranscriptorWindow(ctk.CTkToplevel):
         )
         self._tasks[task.task_id] = task
         self._spawn_widget(task)
-        asyncio.run_coroutine_threadsafe(
+        task.future = asyncio.run_coroutine_threadsafe(
             self._run_task(task), self.bot_loop
         )
 
@@ -435,7 +438,7 @@ class TranscriptorWindow(ctk.CTkToplevel):
         )
         self._tasks[task.task_id] = task
         self._spawn_widget(task)
-        asyncio.run_coroutine_threadsafe(
+        task.future = asyncio.run_coroutine_threadsafe(
             self._run_download(task), self.bot_loop
         )
 
@@ -461,6 +464,7 @@ class TranscriptorWindow(ctk.CTkToplevel):
             task_id=task.task_id,
             source_label=task.source_label,
             on_format_click=self._on_format_click,
+            on_stop=self._on_stop_click,
         )
         # New bubble goes on TOP, before any existing ones. Without
         # ``before=`` pack appends at the bottom which forces the user to
@@ -515,6 +519,9 @@ class TranscriptorWindow(ctk.CTkToplevel):
             except Exception:
                 logger.exception("Failed to write download row for task %s", task.task_id)
             self._post(("downloaded", task.task_id, path))
+        except asyncio.CancelledError:
+            self._post(("stopped", task.task_id))
+            raise
         except Exception as e:
             logger.exception("Download task %s failed", task.task_id)
             self._post(("error", task.task_id, str(e)))
@@ -597,6 +604,9 @@ class TranscriptorWindow(ctk.CTkToplevel):
                 logger.exception("Failed to write history row for task %s", task.task_id)
 
             self._post(("done", task.task_id, segments))
+        except asyncio.CancelledError:
+            self._post(("stopped", task.task_id))
+            raise
         except Exception as e:
             logger.exception("Task %s failed", task.task_id)
             self._post(("error", task.task_id, str(e)))
@@ -652,6 +662,17 @@ class TranscriptorWindow(ctk.CTkToplevel):
             self._run_format(task_id, format_key), self.bot_loop,
         )
 
+    def _on_stop_click(self, task_id: str) -> None:
+        task = self._tasks.get(task_id)
+        if task is None or task.future is None or task.widget is None:
+            return
+        task.status = "stopped"
+        task.widget.set_stopping()
+        # Cancels the asyncio task: CancelledError lands at the next await
+        # and ``finally`` cleans temp files. Work already inside an executor
+        # thread (a GigaAM chunk, yt-dlp) finishes that step first.
+        task.future.cancel()
+
     # ----- cross-thread queue ------------------------------------------
 
     def _post(self, event: tuple) -> None:
@@ -676,7 +697,8 @@ class TranscriptorWindow(ctk.CTkToplevel):
         if kind == "progress":
             _, task_id, status_text, percent = event
             task = self._tasks.get(task_id)
-            if task and task.widget:
+            # yt-dlp's thread keeps reporting after a stop — ignore it.
+            if task and task.widget and task.status != "stopped":
                 task.widget.set_progress(status_text, percent)
                 task.progress = percent
         elif kind == "done":
@@ -695,6 +717,11 @@ class TranscriptorWindow(ctk.CTkToplevel):
                 task.progress = 100
                 task.widget.mark_downloaded(path)
             self._history_panel.refresh()
+        elif kind == "stopped":
+            task = self._tasks.get(event[1])
+            if task and task.widget:
+                task.status = "stopped"
+                task.widget.mark_stopped()
         elif kind == "toast":
             self._show_toast(event[1])
         elif kind == "error":

@@ -67,6 +67,7 @@ class MessageWidget(ctk.CTkFrame):
         source_label: str,
         on_format_click: Callable[[str, str], None],
         # ^ (task_id, format_key) → caller dispatches deliver_format
+        on_stop: Optional[Callable[[str], None]] = None,
     ):
         super().__init__(master, corner_radius=12)
         self.task_id = task_id
@@ -112,13 +113,27 @@ class MessageWidget(ctk.CTkFrame):
         self._progress_frame = ctk.CTkFrame(self, fg_color="transparent")
         self._progress_frame.pack(fill="x", padx=12, pady=(0, 8))
 
+        status_row = ctk.CTkFrame(self._progress_frame, fg_color="transparent")
+        status_row.pack(fill="x")
         self._status = ctk.CTkLabel(
-            self._progress_frame,
+            status_row,
             text="В очереди…",
             anchor="w",
             font=ctk.CTkFont(size=11),
         )
-        self._status.pack(fill="x")
+        self._status.pack(side="left", fill="x", expand=True)
+        self._stop_btn: ctk.CTkButton | None = None
+        if on_stop is not None:
+            self._stop_btn = ctk.CTkButton(
+                status_row,
+                text="⏹ Стоп",
+                width=80,
+                height=24,
+                fg_color=("#c0392b", "#a93226"),
+                hover_color=("#a93226", "#922b21"),
+                command=lambda: on_stop(self.task_id),
+            )
+            self._stop_btn.pack(side="right")
 
         self._progress_bar = ctk.CTkProgressBar(self._progress_frame)
         self._progress_bar.set(0.0)
@@ -265,6 +280,18 @@ class MessageWidget(ctk.CTkFrame):
                 os.startfile(path.parent)  # type: ignore[attr-defined]
         except Exception:
             logger.exception("could not reveal %s", path)
+
+    def set_stopping(self) -> None:
+        """Stop clicked — the pipeline unwinds at its next await."""
+        if self._stop_btn is not None:
+            self._stop_btn.configure(state="disabled")
+        self._status.configure(text="Останавливаю…")
+
+    def mark_stopped(self) -> None:
+        self.mark_error("")
+        self._error_label.configure(
+            text="⏹ Остановлено", text_color=("#666", "#aaa"),
+        )
 
     def mark_error(self, message: str) -> None:
         self._state = "error"

@@ -128,3 +128,25 @@ def test_collapsed_mark_error_keeps_message_hidden(ctk_root) -> None:
 
     w.expand()
     assert _is_packed(w._error_label) is True
+
+
+def test_stop_button_calls_back_and_marks_stopped(ctk_root) -> None:
+    from desktop._message_widget import MessageWidget
+
+    clicked: list[str] = []
+    w = MessageWidget(
+        ctk_root,
+        task_id="t1",
+        source_label="📎 demo.mp3",
+        on_format_click=lambda *a: None,
+        on_stop=clicked.append,
+    )
+    w.pack()
+    w._stop_btn.invoke()
+    assert clicked == ["t1"]
+
+    w.set_stopping()
+    assert w._stop_btn.cget("state") == "disabled"
+    w.mark_stopped()
+    assert not _is_packed(w._progress_frame)
+    assert "Остановлено" in w._error_label.cget("text")

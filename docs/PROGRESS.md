@@ -315,3 +315,9 @@
 - Gemini API из России не работает (400 «User location is not supported»); модель по умолчанию обновлена с удалённой `gemini-1.5-flash` на `gemini-3.8-flash`.
 - SpeechKit ставит пунктуацию только для русского — английский приходит без знаков, решили оставить так.
 - 240 тестов зелёные, релиз [v1.0.5](https://github.com/maslovserg-hub/voicetype-studio/releases/tag/v1.0.5) опубликован и проверен вживую.
+
+### Кнопка «Стоп» (v1.0.6)
+
+- В карточке задачи во время обработки — **⏹ Стоп** ([desktop/_message_widget.py](../desktop/_message_widget.py)). Отменяет future задачи ([desktop/transcriptor_window.py](../desktop/transcriptor_window.py)): `CancelledError` на ближайшем `await`, `finally` чистит временные файлы, карточка — «⏹ Остановлено».
+- Не мгновенно: SpeechKit доделает уже отправленный файл на своей стороне; кусок GigaAM дорабатывает; yt-dlp и ffmpeg в фоне идут до конца (файл закачки остаётся в `data/tmp`).
+- 242 теста, релиз v1.0.6.

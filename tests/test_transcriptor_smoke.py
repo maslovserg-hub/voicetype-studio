@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import inspect
 
+import pytest
+
 from desktop.transcriptor_window import (
     InputBar,
     TranscriptionTask,
@@ -128,3 +130,52 @@ def test_download_target_missing_folder_falls_back(tmp_path) -> None:
 
     gone = tmp_path / "unplugged"
     assert download_target(Settings(download_dir=str(gone))) == (_downloads_dir(), True)
+
+
+def test_stop_cancels_pipeline_and_cleans_temp(tmp_path, monkeypatch) -> None:
+    """⏹ Стоп mid-SpeechKit: the task reports "stopped", temp WAV is gone."""
+    import asyncio
+    from types import SimpleNamespace
+
+    import desktop.transcriptor_window as tw
+
+    src = tmp_path / "talk.mp4"
+    src.write_bytes(b"x")
+    wav = tmp_path / "talk.wav"
+
+    async def fake_to_wav(_p):
+        wav.write_bytes(b"w")
+        return wav
+
+    started = asyncio.Event()
+
+    async def hang(*_a, **_k):
+        started.set()
+        await asyncio.sleep(3600)
+
+    monkeypatch.setattr(tw.AudioConverter, "to_wav", fake_to_wav)
+    monkeypatch.setattr(tw.speechkit, "transcribe", hang)
+
+    events: list[tuple] = []
+    win = SimpleNamespace(
+        settings=SimpleNamespace(speechkit_api_key="key"),
+        _post=events.append,
+        DESKTOP_USER_ID=0,
+    )
+    win._cleanup_temp_files = lambda *a: tw.TranscriptorWindow._cleanup_temp_files(win, *a)
+    task = tw.TranscriptionTask(
+        task_id="t1", source_label="x", source=str(src), lang="other",
+    )
+
+    async def scenario():
+        job = asyncio.create_task(tw.TranscriptorWindow._run_task(win, task))
+        await started.wait()
+        job.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await job
+
+    asyncio.run(scenario())
+    assert ("stopped", "t1") in events
+    assert not any(e[0] == "error" for e in events)
+    assert not wav.exists()
+    assert src.exists()  # the user's own file is never touched
