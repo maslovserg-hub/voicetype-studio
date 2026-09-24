@@ -306,3 +306,12 @@
   - Системный `tar` калечит кириллицу в аргументах (`C:\Users\Сергей\…` → `??????`) → архив кладём в `C:\ProgramData` (только латиница), а распаковываем через `cd /d "%DIR%"` без передачи пути tar'у.
   - .bat обязан быть CRLF (иначе cmd путается в метках и `goto`) → `.gitattributes` с `*.bat text eol=crlf` + проверка в тесте.
 - Старые версии (1.0.2 и ниже) кнопки не имеют — для них .bat прикладывается ассетом к релизу.
+
+### Ролики на других языках и перевод (v1.0.5)
+
+- Переключатель **RU | Другой** в строке ввода Транскриптора ([desktop/transcriptor_window.py](../desktop/transcriptor_window.py)). Язык читается в момент «Старт»/перетаскивания.
+- «Другой»: ссылка YouTube → оригинальные субтитры через yt-dlp (`Downloader.fetch_subtitles`); иначе → Yandex SpeechKit ([core/speechkit.py](../core/speechkit.py)): OGG Opus inline, `auto`-язык, таймкоды из `words[]`. Ключ — `Settings.speechkit_api_key`.
+- Кнопка **🌐 Перевод** — `SummaryMode.TRANSLATE`, на русский с таймкодами.
+- Gemini API из России не работает (400 «User location is not supported»); модель по умолчанию обновлена с удалённой `gemini-1.5-flash` на `gemini-3.8-flash`.
+- SpeechKit ставит пунктуацию только для русского — английский приходит без знаков, решили оставить так.
+- 240 тестов зелёные, релиз [v1.0.5](https://github.com/maslovserg-hub/voicetype-studio/releases/tag/v1.0.5) опубликован и проверен вживую.
