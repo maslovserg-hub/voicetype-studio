@@ -42,6 +42,9 @@ class Settings:
     youtube_cookies_file: str = ""
     # Where «Скачать» saves files. Empty = the system Downloads folder.
     download_dir: str = ""
+    # Yandex SpeechKit API key — speech recognition for the «Другой»
+    # language mode (GigaAM is Russian-only).
+    speechkit_api_key: str = ""
 
     def api_key_for(self, provider: str) -> str:
         return (self.api_keys.get(provider) or "").strip()

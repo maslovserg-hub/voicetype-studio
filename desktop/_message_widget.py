@@ -46,10 +46,11 @@ from ._format_dispatch import (
 logger = logging.getLogger(__name__)
 
 
-# Two visual rows of buttons: deterministic formats first, AI second.
+# Two visual rows of buttons: text formats (+ translation) first, AI second.
+# «Перевод» sits in the first row so the second one stays at five buttons.
 _BUTTON_ROWS: tuple[tuple[str, ...], ...] = (
-    TEXT_FORMATS,
-    LLM_FORMATS + (TTS_FORMAT,),
+    TEXT_FORMATS + ("translate",),
+    tuple(k for k in LLM_FORMATS if k != "translate") + (TTS_FORMAT,),
 )
 
 WidgetState = Literal["processing", "done", "downloaded", "error"]

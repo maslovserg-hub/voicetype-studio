@@ -138,6 +138,45 @@ class Downloader:
         shutil.move(str(tmp_path), str(final))
         return final
 
+    YOUTUBE_PATTERN = re.compile(r"(?:youtube\.com|youtu\.be)/", re.IGNORECASE)
+
+    @classmethod
+    async def fetch_subtitles(cls, url: str) -> Optional[list]:
+        """Original-language YouTube subtitles as segments, or ``None``.
+
+        Used for non-Russian videos instead of ASR: free and instant.
+        Author-made subtitles win over auto-captions. ``None`` means "no
+        luck, fall back to audio" — never raises, since any failure here
+        just costs the fallback path.
+        """
+        if not cls.YOUTUBE_PATTERN.search(url):
+            return None
+
+        def _fetch() -> Optional[list]:
+            opts: dict = {
+                "quiet": True,
+                "no_warnings": True,
+                "skip_download": True,
+                "noplaylist": True,
+                "js_runtimes": {"node": {"path": None}},
+            }
+            if cls._cookies_file:
+                opts["cookiefile"] = cls._cookies_file
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                info = ydl.extract_info(url, download=False)
+                track = _pick_subtitle_track(info or {})
+                if track is None:
+                    return None
+                raw = ydl.urlopen(track["url"]).read().decode("utf-8")
+            return parse_json3_subtitles(raw)
+
+        try:
+            segments = await asyncio.get_event_loop().run_in_executor(None, _fetch)
+        except Exception:
+            logger.warning("Subtitle lookup failed for %s", url, exc_info=True)
+            return None
+        return segments or None
+
     @classmethod
     async def _download_yandex_disk(cls, url: str) -> Path:
         """Download from Yandex.Disk public link."""
@@ -560,3 +599,46 @@ def _extract_filename(url: str) -> Optional[str]:
         if name and "." in name:
             return name
     return None
+
+
+def _pick_subtitle_track(info: dict) -> Optional[dict]:
+    """The json3 track in the video's own language, or ``None``.
+
+    Author subtitles first; then YouTube's ``<lang>-orig`` auto-captions
+    (the ASR of the original audio — plain ``<lang>`` auto tracks may be
+    machine translations).
+    """
+    lang = (info.get("language") or "").split("-")[0].lower()
+    manual = info.get("subtitles") or {}
+    auto = info.get("automatic_captions") or {}
+
+    candidates = []
+    if lang:
+        candidates += [manual.get(k) for k in manual if k.split("-")[0].lower() == lang]
+    if len(manual) == 1:
+        candidates += list(manual.values())
+    candidates += [auto.get(k) for k in auto if k.endswith("-orig")]
+
+    for formats in candidates:
+        for fmt in formats or []:
+            if fmt.get("ext") == "json3" and fmt.get("url"):
+                return fmt
+    return None
+
+
+def parse_json3_subtitles(raw: str) -> list:
+    """YouTube json3 captions → segments. One event = one segment."""
+    import json
+
+    from .transcriber import Segment
+
+    out = []
+    for ev in json.loads(raw).get("events") or []:
+        text = "".join(s.get("utf8", "") for s in ev.get("segs") or [])
+        text = " ".join(text.split())
+        if not text:
+            continue
+        start = ev.get("tStartMs", 0) / 1000.0
+        end = start + ev.get("dDurationMs", 0) / 1000.0
+        out.append(Segment(start=start, end=end, text=text))
+    return out

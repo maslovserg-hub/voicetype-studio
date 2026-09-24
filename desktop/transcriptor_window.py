@@ -46,6 +46,7 @@ from core import (
     Segment,
     Transcriber,
     history,
+    speechkit,
 )
 from core.settings import Settings
 
@@ -72,6 +73,8 @@ class TranscriptionTask:
     progress: int = 0
     segments: Optional[list[Segment]] = None
     widget: Optional[MessageWidget] = None
+    # "ru" → GigaAM; "other" → YouTube subtitles, else Yandex SpeechKit.
+    lang: str = "ru"
     error: Optional[str] = None
 
 
@@ -120,6 +123,10 @@ def label_for_source(kind: str, value: str) -> str:
 
 
 # --- input bar -----------------------------------------------------------
+
+
+LANG_RU = "RU"
+LANG_OTHER = "Другой"
 
 
 class InputBar(ctk.CTkFrame):
@@ -171,6 +178,14 @@ class InputBar(ctk.CTkFrame):
         )
         self._download_btn.pack(side="left", padx=4, pady=8)
 
+        # Speech language. GigaAM only knows Russian — anything else goes
+        # to YouTube subtitles or Yandex SpeechKit.
+        self._lang_switch = ctk.CTkSegmentedButton(
+            self, values=[LANG_RU, LANG_OTHER],
+        )
+        self._lang_switch.set(LANG_RU)
+        self._lang_switch.pack(side="left", padx=4, pady=8)
+
         self._submit_btn = ctk.CTkButton(
             self,
             text="Старт",
@@ -178,6 +193,10 @@ class InputBar(ctk.CTkFrame):
             command=self._fire_submit,
         )
         self._submit_btn.pack(side="left", padx=(4, 8), pady=8)
+
+    @property
+    def lang(self) -> str:
+        return "ru" if self._lang_switch.get() == LANG_RU else "other"
 
     def _fire_submit(self) -> None:
         value = self._entry.get()
@@ -395,6 +414,7 @@ class TranscriptorWindow(ctk.CTkToplevel):
             task_id=uuid.uuid4().hex[:10],
             source_label=source_label,
             source=source,
+            lang=self._input.lang,
         )
         self._tasks[task.task_id] = task
         self._spawn_widget(task)
@@ -504,39 +524,67 @@ class TranscriptorWindow(ctk.CTkToplevel):
         wav_path: Optional[Path] = None
         chunks_dir: Optional[Path] = None
         try:
-            self._post(("progress", task.task_id, "Скачиваю…", 5))
-            if _looks_like_url(task.source):
-                # yt-dlp fires this from its worker thread; ``_post`` is
-                # thread-safe (queue.Queue) so the GUI bar updates live
-                # instead of sitting at 5% for the whole download. Map
-                # 0–100% from yt-dlp into 5–25% of our overall pipeline.
-                def dl_cb(percent: int, status: str, _tid=task.task_id) -> None:
-                    mapped = max(5, min(25, 5 + int(percent * 0.20)))
-                    self._post(("progress", _tid, status, mapped))
+            segments: Optional[list[Segment]] = None
+            use_speechkit = False
+            if task.lang != "ru":
+                # Non-Russian speech: GigaAM would output gibberish. Try the
+                # video's own subtitles first (free, instant), then SpeechKit.
+                if _looks_like_url(task.source):
+                    self._post(("progress", task.task_id, "Ищу субтитры…", 5))
+                    segments = await Downloader.fetch_subtitles(task.source)
+                if not segments:
+                    # Fail before a long download, not after it.
+                    if not self.settings.speechkit_api_key.strip():
+                        raise RuntimeError(
+                            "Для языка «Другой» нужен API-ключ Yandex "
+                            "SpeechKit — добавьте его в Настройках."
+                        )
+                    use_speechkit = True
 
-                downloaded_path, _src_type = await Downloader.download(
-                    task.source, progress_callback=dl_cb,
-                )
-                file_path = downloaded_path
-            else:
-                file_path = Path(task.source)
+            if not segments:
+                self._post(("progress", task.task_id, "Скачиваю…", 5))
+                if _looks_like_url(task.source):
+                    # yt-dlp fires this from its worker thread; ``_post`` is
+                    # thread-safe (queue.Queue) so the GUI bar updates live
+                    # instead of sitting at 5% for the whole download. Map
+                    # 0–100% from yt-dlp into 5–25% of our overall pipeline.
+                    def dl_cb(percent: int, status: str, _tid=task.task_id) -> None:
+                        mapped = max(5, min(25, 5 + int(percent * 0.20)))
+                        self._post(("progress", _tid, status, mapped))
 
-            self._post(("progress", task.task_id, "Конвертирую в WAV…", 25))
-            wav_path = await AudioConverter.to_wav(Path(file_path))
+                    downloaded_path, _src_type = await Downloader.download(
+                        task.source, progress_callback=dl_cb,
+                    )
+                    file_path = downloaded_path
+                else:
+                    file_path = Path(task.source)
 
-            self._post(("progress", task.task_id, "Транскрибирую…", 30))
+                self._post(("progress", task.task_id, "Конвертирую в WAV…", 25))
+                wav_path = await AudioConverter.to_wav(Path(file_path))
 
-            def cb(p: int) -> None:
-                self._post((
-                    "progress", task.task_id,
-                    f"Транскрибирую {p}%…", 30 + int(p * 0.7),
-                ))
+                self._post(("progress", task.task_id, "Транскрибирую…", 30))
 
-            segments = await Transcriber.transcribe(
-                Path(wav_path), progress_callback=cb,
-            )
-            # ``split_for_short_asr`` writes its slices next to the wav.
-            chunks_dir = wav_path.parent / f"{wav_path.stem}_short_chunks"
+                def cb(p: int) -> None:
+                    self._post((
+                        "progress", task.task_id,
+                        f"Транскрибирую {p}%…", 30 + int(p * 0.7),
+                    ))
+
+                if use_speechkit:
+                    def sk_cb(status: str, _tid=task.task_id) -> None:
+                        self._post(("progress", _tid, status, 50))
+
+                    segments = await speechkit.transcribe(
+                        Path(wav_path),
+                        self.settings.speechkit_api_key,
+                        status_callback=sk_cb,
+                    )
+                else:
+                    segments = await Transcriber.transcribe(
+                        Path(wav_path), progress_callback=cb,
+                    )
+                    # ``split_for_short_asr`` writes its slices next to the wav.
+                    chunks_dir = wav_path.parent / f"{wav_path.stem}_short_chunks"
 
             try:
                 history.add(

@@ -30,11 +30,12 @@ class SummaryMode(Enum):
     STRUCTURED = "structured"
     ROLES = "roles"
     QUESTIONS = "questions"
+    TRANSLATE = "translate"
 
 
 # Modes whose prompt expects a transcript WITH timestamps (lines like
 # "[00:01:23] фраза"). Other modes get plain text.
-TIMESTAMPED_MODES = {SummaryMode.QUESTIONS}
+TIMESTAMPED_MODES = {SummaryMode.QUESTIONS, SummaryMode.TRANSLATE}
 
 
 class LLMProvider(ABC):

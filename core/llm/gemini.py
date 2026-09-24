@@ -22,8 +22,8 @@ logger = logging.getLogger(__name__)
 
 class GeminiProvider(LLMProvider):
     name = "gemini"
-    default_model = "gemini-1.5-flash"
-    available_models = ("gemini-1.5-flash", "gemini-1.5-pro")
+    default_model = "gemini-3.8-flash"
+    available_models = ("gemini-3.8-flash", "gemini-3.5-flash-lite")
 
     api_base: ClassVar[str] = (
         "https://generativelanguage.googleapis.com/v1beta/models"

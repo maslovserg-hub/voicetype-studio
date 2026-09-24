@@ -29,9 +29,9 @@ from core.settings import Settings
 logger = logging.getLogger(__name__)
 
 
-# Eight buttons surfaced under each completed transcription.
+# Nine buttons surfaced under each completed transcription.
 TEXT_FORMATS = ("text", "timestamps", "srt")
-LLM_FORMATS = ("brief", "structured", "roles", "questions")
+LLM_FORMATS = ("brief", "structured", "roles", "questions", "translate")
 TTS_FORMAT = "tts"
 ALL_FORMATS = TEXT_FORMATS + LLM_FORMATS + (TTS_FORMAT,)
 
@@ -75,7 +75,7 @@ async def deliver_format(
     format_key: str,
     settings: Settings,
 ) -> FormatResult:
-    """Produce the user-facing artefact for one of the eight buttons."""
+    """Produce the user-facing artefact for one of the nine buttons."""
     if not segments:
         raise ValueError("deliver_format called on empty segments")
     if format_key not in ALL_FORMATS:
@@ -122,6 +122,7 @@ FORMAT_LABELS: dict[str, str] = {
     "structured": "📚 Конспект",
     "roles": "🎭 По ролям",
     "questions": "❓ Вопросы",
+    "translate": "🌐 Перевод",
     "tts": "🔊 Озвучка",
 }
 

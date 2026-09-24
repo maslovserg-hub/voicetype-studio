@@ -206,6 +206,12 @@ class SettingsWindow(ctk.CTkToplevel):
             attach_clipboard_menu(entry)
             self._key_entries[key] = entry
 
+        _row_label(parent, "Yandex SpeechKit API key (язык «Другой»)")
+        self._speechkit_entry = ctk.CTkEntry(parent, show="*")
+        self._speechkit_entry.insert(0, s.speechkit_api_key or "")
+        self._speechkit_entry.pack(fill="x", pady=(0, 8))
+        attach_clipboard_menu(self._speechkit_entry)
+
     def _build_tts_section(self, parent, s: Settings) -> None:
         _section_header(parent, "Озвучка (silero TTS)")
         _row_label(parent, "Голос")
@@ -468,6 +474,7 @@ class SettingsWindow(ctk.CTkToplevel):
             whitelist_ids=parse_whitelist_ids(self._whitelist_entry.get()),
             youtube_cookies_file=self._cookies_entry.get().strip(),
             download_dir=self._download_dir_entry.get().strip(),
+            speechkit_api_key=self._speechkit_entry.get().strip(),
         )
 
 

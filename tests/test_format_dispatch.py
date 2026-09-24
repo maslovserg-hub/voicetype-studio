@@ -157,6 +157,22 @@ def test_questions_payload_is_timestamped(fake_settings) -> None:
     assert "[" in captured[0] and "]" in captured[0]
 
 
+def test_translate_payload_is_timestamped(fake_settings) -> None:
+    """'translate' keeps timecodes, so the provider must receive them."""
+    captured: list[tuple[SummaryMode, str]] = []
+
+    class _Capturing(_FakeProvider):
+        async def process(self, mode, transcript, model=None):
+            captured.append((mode, transcript))
+            return await super().process(mode, transcript, model)
+
+    KNOWN_PROVIDERS["fake"] = _Capturing
+    result = asyncio.run(deliver_format(_segments(), "translate", fake_settings))
+    assert result.kind == "text"
+    assert captured[0][0] is SummaryMode.TRANSLATE
+    assert captured[0][1].lstrip().startswith("[00:00]")
+
+
 def test_brief_payload_is_plain(fake_settings) -> None:
     captured: list[str] = []
 
