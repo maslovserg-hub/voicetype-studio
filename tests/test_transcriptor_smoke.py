@@ -161,6 +161,7 @@ def test_stop_cancels_pipeline_and_cleans_temp(tmp_path, monkeypatch) -> None:
         settings=SimpleNamespace(speechkit_api_key="key"),
         _post=events.append,
         DESKTOP_USER_ID=0,
+        asr_executor=None,
     )
     win._cleanup_temp_files = lambda *a: tw.TranscriptorWindow._cleanup_temp_files(win, *a)
     task = tw.TranscriptionTask(

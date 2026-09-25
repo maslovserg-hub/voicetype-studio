@@ -33,7 +33,14 @@ class AudioConverter:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        _, stderr = await process.communicate()
+        try:
+            _, stderr = await process.communicate()
+        except asyncio.CancelledError:
+            # ⏹ Стоп: don't let ffmpeg grind through a 2-hour file alone.
+            process.kill()
+            await process.wait()
+            output_path.unlink(missing_ok=True)
+            raise
 
         if process.returncode != 0:
             raise RuntimeError(f"ffmpeg failed: {stderr.decode()}")

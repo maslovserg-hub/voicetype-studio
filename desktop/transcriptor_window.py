@@ -587,11 +587,12 @@ class TranscriptorWindow(ctk.CTkToplevel):
                         status_callback=sk_cb,
                     )
                 else:
+                    # ``split_for_short_asr`` writes its slices next to the
+                    # wav. Known up front so ⏹ Стоп can clean them too.
+                    chunks_dir = wav_path.parent / f"{wav_path.stem}_short_chunks"
                     segments = await Transcriber.transcribe(
                         Path(wav_path), progress_callback=cb,
                     )
-                    # ``split_for_short_asr`` writes its slices next to the wav.
-                    chunks_dir = wav_path.parent / f"{wav_path.stem}_short_chunks"
 
             try:
                 history.add(
@@ -606,6 +607,13 @@ class TranscriptorWindow(ctk.CTkToplevel):
             self._post(("done", task.task_id, segments))
         except asyncio.CancelledError:
             self._post(("stopped", task.task_id))
+            # The split or a GigaAM chunk may still hold these files on the
+            # ASR thread, so the cleanup below can miss them. The executor
+            # has one worker — this runs right after that job ends.
+            if wav_path is not None and self.asr_executor is not None:
+                self.asr_executor.submit(
+                    self._cleanup_temp_files, None, wav_path, chunks_dir,
+                )
             raise
         except Exception as e:
             logger.exception("Task %s failed", task.task_id)

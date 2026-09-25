@@ -3,6 +3,7 @@ import asyncio
 import logging
 import shutil
 import tempfile
+import threading
 from pathlib import Path
 from typing import Callable, Optional, Tuple
 from urllib.parse import urlparse, unquote
@@ -63,6 +64,40 @@ def _unique_path(path: Path) -> Path:
         if not candidate.exists():
             return candidate
     return path
+
+
+class _DownloadAborted(BaseException):
+    """Raised from the yt-dlp progress hook after ⏹ Стоп.
+
+    BaseException on purpose: every retry path in ``_download`` catches
+    ``Exception`` and would otherwise start the next attempt.
+    """
+
+
+def _remove_partials(paths: set[str]) -> None:
+    """Delete what yt-dlp wrote: the file plus its ``.part``/``.ytdl``/
+    ``-Frag`` siblings, which all start with the same name."""
+    for p in paths:
+        path = Path(p)
+        if not path.parent.is_dir():
+            continue
+        for f in path.parent.iterdir():
+            if f.name.startswith(path.name):
+                try:
+                    f.unlink()
+                except OSError:
+                    logger.debug("could not remove %s", f, exc_info=True)
+
+
+async def _save_stream(resp, file_path: Path) -> None:
+    """Write a response body to ``file_path``; drop the partial on ⏹ Стоп."""
+    try:
+        async with aiofiles.open(file_path, "wb") as f:
+            async for chunk in resp.content.iter_chunked(8192):
+                await f.write(chunk)
+    except asyncio.CancelledError:
+        file_path.unlink(missing_ok=True)
+        raise
 
 
 class Downloader:
@@ -197,9 +232,7 @@ class Downloader:
             async with session.get(download_url, timeout=aiohttp.ClientTimeout(total=config.download_timeout_s)) as resp:
                 if resp.status != 200:
                     raise ValueError(f"Failed to download file: {resp.status}")
-                async with aiofiles.open(file_path, "wb") as f:
-                    async for chunk in resp.content.iter_chunked(8192):
-                        await f.write(chunk)
+                await _save_stream(resp, file_path)
 
         return file_path
 
@@ -213,9 +246,7 @@ class Downloader:
             async with session.get(url, timeout=aiohttp.ClientTimeout(total=config.download_timeout_s)) as resp:
                 if resp.status != 200:
                     raise ValueError(f"Failed to download file: {resp.status}")
-                async with aiofiles.open(file_path, "wb") as f:
-                    async for chunk in resp.content.iter_chunked(8192):
-                        await f.write(chunk)
+                await _save_stream(resp, file_path)
 
         return file_path
 
@@ -282,10 +313,19 @@ class Downloader:
             output_template = str(config.temp_dir / "%(id)s.%(ext)s")
 
         loop = asyncio.get_event_loop()
+        # ⏹ Стоп cancels only the awaiting coroutine — the worker thread
+        # learns about it here, at yt-dlp's next progress tick.
+        cancelled = threading.Event()
+        touched: set[str] = set()
 
         # yt-dlp fires this from its worker thread; callers (e.g. the
         # Transcriptor window) marshal UI updates via their own queue.
         def _yt_progress_hook(d: dict) -> None:
+            for key in ("tmpfilename", "filename"):
+                if d.get(key):
+                    touched.add(str(d[key]))
+            if cancelled.is_set():
+                raise _DownloadAborted()
             if progress_callback is None:
                 return
             status = d.get("status")
@@ -554,7 +594,22 @@ class Downloader:
                 "Подробности yt-dlp:\n" + "\n".join(errors)
             )
 
-        return await loop.run_in_executor(None, _download)
+        def _download_or_clean() -> Optional[Path]:
+            result: Optional[Path] = None
+            try:
+                result = _download()
+                return result
+            except _DownloadAborted:
+                return None
+            finally:
+                if cancelled.is_set():
+                    _remove_partials(touched | ({str(result)} if result else set()))
+
+        try:
+            return await loop.run_in_executor(None, _download_or_clean)
+        except asyncio.CancelledError:
+            cancelled.set()
+            raise
 
 
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")

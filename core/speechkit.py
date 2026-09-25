@@ -33,6 +33,7 @@ logger = logging.getLogger(__name__)
 RECOGNIZE_URL = "https://stt.api.cloud.yandex.net/stt/v3/recognizeFileAsync"
 RESULT_URL = "https://stt.api.cloud.yandex.net/stt/v3/getRecognition"
 OPERATION_URL = "https://operation.api.cloud.yandex.net/operations/{id}"
+CANCEL_URL = OPERATION_URL + ":cancel"
 
 MAX_INLINE_BYTES = 60 * 1024 * 1024
 POLL_INTERVAL_S = 3
@@ -90,22 +91,16 @@ async def transcribe(
         op_id = json.loads(body)["id"]
         logger.info("speechkit operation %s (%d KB audio)", op_id, len(audio) // 1024)
 
-        started = time.monotonic()
-        while True:
-            await asyncio.sleep(POLL_INTERVAL_S)
-            elapsed = int(time.monotonic() - started)
-            if status_callback:
-                status_callback(f"Распознаю в Яндексе… {elapsed // 60}:{elapsed % 60:02d}")
-            async with session.get(
-                OPERATION_URL.format(id=op_id), headers=headers
-            ) as resp:
-                op = await resp.json(content_type=None)
-            if op.get("error"):
-                raise RuntimeError(f"SpeechKit: {op['error'].get('message', op['error'])}")
-            if op.get("done"):
-                break
-            if elapsed > MAX_WAIT_S:
-                raise RuntimeError("SpeechKit не ответил за час — попробуйте позже.")
+        try:
+            await _poll(session, headers, op_id, status_callback)
+        except asyncio.CancelledError:
+            # ⏹ Стоп: ask Yandex to drop the job. Best effort — the
+            # operation may not support cancelling, and we don't wait long.
+            try:
+                await asyncio.wait_for(_cancel(session, headers, op_id), timeout=5)
+            except Exception:
+                logger.debug("speechkit cancel %s failed", op_id, exc_info=True)
+            raise
 
         async with session.get(
             RESULT_URL, headers=headers, params={"operationId": op_id}
@@ -116,6 +111,31 @@ async def transcribe(
                 raise RuntimeError(f"SpeechKit вернул {resp.status}: {body[:200]}")
 
     return parse_recognition(body)
+
+
+async def _poll(session, headers, op_id, status_callback) -> None:
+    """Wait until the recognition operation is done."""
+    started = time.monotonic()
+    while True:
+        await asyncio.sleep(POLL_INTERVAL_S)
+        elapsed = int(time.monotonic() - started)
+        if status_callback:
+            status_callback(f"Распознаю в Яндексе… {elapsed // 60}:{elapsed % 60:02d}")
+        async with session.get(
+            OPERATION_URL.format(id=op_id), headers=headers
+        ) as resp:
+            op = await resp.json(content_type=None)
+        if op.get("error"):
+            raise RuntimeError(f"SpeechKit: {op['error'].get('message', op['error'])}")
+        if op.get("done"):
+            return
+        if elapsed > MAX_WAIT_S:
+            raise RuntimeError("SpeechKit не ответил за час — попробуйте позже.")
+
+
+async def _cancel(session, headers, op_id) -> None:
+    async with session.post(CANCEL_URL.format(id=op_id), headers=headers) as resp:
+        logger.info("speechkit cancel %s: %s %s", op_id, resp.status, (await resp.text())[:200])
 
 
 def parse_recognition(body: str) -> list[Segment]:
@@ -194,7 +214,12 @@ async def _to_ogg_opus(src: Path, dst: Path) -> None:
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
-    _, stderr = await process.communicate()
+    try:
+        _, stderr = await process.communicate()
+    except asyncio.CancelledError:
+        process.kill()  # ⏹ Стоп — the caller's finally removes ``dst``
+        await process.wait()
+        raise
     if process.returncode != 0:
         raise RuntimeError(
             f"ffmpeg не смог сжать аудио: {stderr.decode(errors='replace')[-300:]}"

@@ -36,12 +36,16 @@ import sys
 if sys.platform == "win32":
     import subprocess as _sp
 
-    _Popen_orig = _sp.Popen.__init__
+    # Guard: a second run of this module (importlib.reload in tests) would
+    # make the wrapper call itself forever.
+    if not getattr(_sp.Popen.__init__, "_no_window", False):
+        _Popen_orig = _sp.Popen.__init__
 
-    def _Popen_no_window(self, *a, creationflags=0, **kw):
-        _Popen_orig(self, *a, creationflags=creationflags | 0x08000000, **kw)
+        def _Popen_no_window(self, *a, creationflags=0, **kw):
+            _Popen_orig(self, *a, creationflags=creationflags | 0x08000000, **kw)
 
-    _sp.Popen.__init__ = _Popen_no_window  # type: ignore[method-assign]
+        _Popen_no_window._no_window = True  # type: ignore[attr-defined]
+        _sp.Popen.__init__ = _Popen_no_window  # type: ignore[method-assign]
 
 
 import asyncio

@@ -321,3 +321,12 @@
 - В карточке задачи во время обработки — **⏹ Стоп** ([desktop/_message_widget.py](../desktop/_message_widget.py)). Отменяет future задачи ([desktop/transcriptor_window.py](../desktop/transcriptor_window.py)): `CancelledError` на ближайшем `await`, `finally` чистит временные файлы, карточка — «⏹ Остановлено».
 - Не мгновенно: SpeechKit доделает уже отправленный файл на своей стороне; кусок GigaAM дорабатывает; yt-dlp и ffmpeg в фоне идут до конца (файл закачки остаётся в `data/tmp`).
 - 242 теста, релиз v1.0.6.
+
+### «Стоп» обрывает всё (v1.0.7)
+
+- yt-dlp: флаг `threading.Event` ставится при отмене корутины, прогресс-хук бросает `_DownloadAborted` (BaseException, чтобы не ловили ретраи на `except Exception`), поток сам удаляет `.part`/`-Frag`/готовый файл ([core/downloader.py](../core/downloader.py)). Яндекс.Диск и прямые ссылки удаляют недокачанный файл.
+- ffmpeg (WAV и OGG для SpeechKit) убивается при отмене ([core/converter.py](../core/converter.py), [core/speechkit.py](../core/speechkit.py)).
+- SpeechKit: при отмене `POST operations/{id}:cancel`, best effort — поддерживает ли Яндекс отмену распознавания, не проверено.
+- GigaAM: текущий кусок (или нарезка) дорабатывает — прервать его нельзя; уборка ставится в тот же однопоточный executor сразу за ним.
+- main.py: подмена `Popen.__init__` стала идемпотентной — `importlib.reload(main)` в `test_main_smoke` зацикливала её, и все следующие тесты с подпроцессами падали с RecursionError.
+- 245 тестов, релиз v1.0.7.
