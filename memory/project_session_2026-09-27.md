@@ -20,3 +20,6 @@ type: project
 ## Хвосты
 - Предложено удалить `C:\VoiceTypeStudio\data\silero\`, `data\tts\` и пустые `bot\__pycache__` в репо — пользователь не ответил.
 - Tk-тесты окна настроек (новые) в этом окружении скипаются (init.tcl по кириллическому пути).
+
+## Релиз
+[v1.0.8](https://github.com/maslovserg-hub/voicetype-studio/releases/tag/v1.0.8): zip 219 670 247 б (плоский, без aiogram), новый Setup.exe (фикс ярлыка), Update.bat. `releases/latest` → v1.0.8 проверено. Локально установлен (robocopy /MIR `_internal` + exe) и запущен; иконку на панели задач пользователь подтвердил.
