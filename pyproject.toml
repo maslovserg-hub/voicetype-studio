@@ -1,4 +1,5 @@
 [tool.pytest.ini_options]
+testpaths = ["tests"]  # archive/ holds tests for removed code
 markers = [
     "live: hits a real provider API; skipped unless its API key env var is set",
 ]
