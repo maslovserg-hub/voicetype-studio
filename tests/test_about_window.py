@@ -59,7 +59,8 @@ def test_about_window_shows_version_description_and_author(ctk_root) -> None:
     assert any(__version__ in t for t in texts)
     assert "Автор: Сергей Маслов" in texts
     assert "Right Ctrl" in joined
-    assert "Telegram-бот" in joined
+    assert "Telegram-бот" not in joined
+    assert "озвучка" not in joined
     assert "Проверить обновления" in texts
 
 

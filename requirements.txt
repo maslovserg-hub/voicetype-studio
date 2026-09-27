@@ -1,7 +1,3 @@
-# Telegram bot
-aiogram>=3.4
-python-dotenv>=1.0
-
 # ASR
 gigaam @ git+https://github.com/salute-developers/GigaAM.git
 torch>=2.0.0

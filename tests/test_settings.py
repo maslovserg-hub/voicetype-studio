@@ -11,7 +11,6 @@ def test_defaults_sensible() -> None:
     s = Settings()
     assert s.default_provider == "perplexity"
     assert "openai" in s.favorites
-    assert s.bot_enabled is False
     assert s.api_keys == {}
 
 
@@ -26,10 +25,7 @@ def test_save_then_load_roundtrip(tmp_path) -> None:
         default_provider="openai",
         favorites=["anthropic", "gemini"],
         api_keys={"openai": "sk-test", "anthropic": "ant-test"},
-        tts_speaker="aidar",
-        bot_enabled=True,
-        bot_token="123:abc",
-        whitelist_ids=[42, 100],
+        download_dir="C:/x",
     )
     settings_io.save(original, target)
 
@@ -50,7 +46,7 @@ def test_unknown_field_in_file_does_not_crash(tmp_path) -> None:
     s = settings_io.load(target)
     assert s.default_provider == "openai"
     # Other fields fall back to defaults.
-    assert s.bot_enabled is False
+    assert s.api_keys == {}
 
 
 def test_corrupt_json_returns_defaults(tmp_path) -> None:

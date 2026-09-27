@@ -50,14 +50,13 @@ dist/
 - Python 3.12 runtime
 - torch + torchaudio CPU (~150 МБ)
 - gigaam (без модели — она качается отдельно)
-- aiogram + pydantic + aiohttp
+- aiohttp
 - customtkinter + tkinterdnd2
 - pydub, yt-dlp, sounddevice, pynput, pystray, Pillow
 - onnxruntime (используется gigaam как backend)
 
 **НЕ входит:**
 - GigaAM v3_e2e_ctc модель (~440 МБ) — лежит в `C:\gigaam_cache\v3_e2e_ctc.ckpt`. Если файл уже там — переиспользуется, не качается. На свежей машине `gigaam.load_model` скачает её автоматически при первой транскрипции.
-- silero v4_ru (~38 МБ) — лежит в `C:\VoiceTypeStudio\data\silero\v4_ru.pt`. Если файла нет, `core.tts.TTSService` сначала ищет в `~/.cache/silero/v4_ru.pt` и `~/.cache/torch/hub/snakers4_silero-models_master/...` (стандартные торч-локации). Найдёт — переиспользует (или скопирует в проектную папку, если домашний путь содержит non-ASCII символы — `torch.package.PackageImporter` non-ASCII не любит).
 - API-ключи провайдеров — пользователь вводит их в Настройках.
 
 ## Релиз

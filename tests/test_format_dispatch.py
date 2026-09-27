@@ -3,7 +3,7 @@
 The three deterministic formats (text/timestamps/srt) hit ``core.Formatter``
 directly. The four LLM modes go through ``Summarizer.process`` — we wire a
 fake provider via :func:`monkeypatch.setattr` against the LLM registry so
-no network is touched. TTS is exercised by stubbing ``TTSService.synthesize``.
+no network is touched.
 """
 
 from __future__ import annotations
@@ -20,7 +20,6 @@ from desktop._format_dispatch import (
     FORMAT_LABELS,
     LLM_FORMATS,
     TEXT_FORMATS,
-    TTS_FORMAT,
     deliver_format,
     file_extension_for,
 )
@@ -90,12 +89,10 @@ def test_format_groups_disjoint() -> None:
     text = set(TEXT_FORMATS)
     llm = set(LLM_FORMATS)
     assert not (text & llm)
-    assert TTS_FORMAT not in text and TTS_FORMAT not in llm
 
 
 def test_file_extension_mapping() -> None:
     assert file_extension_for("srt") == ".srt"
-    assert file_extension_for("tts") == ".wav"
     assert file_extension_for("text") == ".txt"
     assert file_extension_for("brief") == ".txt"
 
@@ -203,56 +200,3 @@ def test_empty_segments_raises(fake_settings) -> None:
     with pytest.raises(ValueError, match="empty segments"):
         asyncio.run(deliver_format([], "text", fake_settings))
 
-
-# --- TTS branch ----------------------------------------------------------
-
-
-def test_deliver_tts_writes_wav(fake_settings, tmp_path, monkeypatch) -> None:
-    # Stub TTSService.synthesize so we don't pull torch/silero in tests.
-    from core import TTSService, config
-
-    monkeypatch.setattr(config, "data_dir", tmp_path)
-
-    async def fake_synthesize(text: str, output_path, speaker=None):
-        from pathlib import Path
-        Path(output_path).write_bytes(b"RIFFfaked WAV bytes")
-        return output_path
-
-    monkeypatch.setattr(TTSService, "synthesize", staticmethod(fake_synthesize))
-
-    result = asyncio.run(deliver_format(_segments(), "tts", fake_settings))
-    assert result.kind == "audio_path"
-    assert result.preview_text and result.preview_text.startswith("[brief]")
-    from pathlib import Path
-    assert Path(result.content).exists()
-    assert Path(result.content).suffix == ".wav"
-
-
-def test_deliver_tts_passes_speaker_from_settings(
-    fake_settings, tmp_path, monkeypatch,
-) -> None:
-    """Regression — earlier ``TTSService._resolve_speaker`` ignored
-    ``Settings.tts_speaker`` and read ``TTS_SPEAKER`` env var instead, so
-    Settings UI couldn't actually switch voices. The dispatcher must pass
-    the configured speaker through."""
-    from core import TTSService, Settings, config
-
-    monkeypatch.setattr(config, "data_dir", tmp_path)
-
-    captured: dict = {}
-
-    async def capturing_synth(text: str, output_path, speaker=None):
-        from pathlib import Path
-        captured["speaker"] = speaker
-        Path(output_path).write_bytes(b"x")
-        return output_path
-
-    monkeypatch.setattr(TTSService, "synthesize", staticmethod(capturing_synth))
-
-    s = Settings(
-        default_provider="fake",
-        api_keys={"fake": "k"},
-        tts_speaker="aidar",
-    )
-    asyncio.run(deliver_format(_segments(), "tts", s))
-    assert captured["speaker"] == "aidar"

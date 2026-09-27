@@ -20,15 +20,15 @@ import customtkinter as ctk
 from core import updater
 from core.version import __version__
 
+from ._icons import apply_app_icon
+
 logger = logging.getLogger(__name__)
 
 DESCRIPTION = (
     "Распознавание и обработка русской речи:\n"
     " • диктовка в любое окно по Right Ctrl\n"
     " • транскрибация файлов и ссылок (YouTube и др.)\n"
-    " • краткое изложение и обработка текста через LLM\n"
-    " • озвучка текста\n"
-    " • Telegram-бот (по желанию)"
+    " • краткое изложение и обработка текста через LLM"
 )
 
 AUTHOR = "Сергей Маслов"
@@ -46,6 +46,7 @@ class AboutWindow(ctk.CTkToplevel):
     ):
         super().__init__(master)
         self.title("VoiceType Studio — О программе")
+        apply_app_icon(self)
         self.geometry("480x360")
         self.minsize(420, 320)
         self.resizable(False, False)

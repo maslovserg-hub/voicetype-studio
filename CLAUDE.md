@@ -15,7 +15,7 @@
 
 ## Контекст
 
-**VoiceType Studio** — Windows-приложение для распознавания и обработки русской речи. Объединяет три способа использования (диктовка через Right Ctrl, окно-транскриптор для файлов/ссылок, опциональный Telegram-бот) на общем backend (GigaAM v3_e2e_ctc + multi-provider LLM + silero TTS).
+**VoiceType Studio** — Windows-приложение для распознавания и обработки русской речи. Объединяет два способа использования (диктовка через Right Ctrl, окно-транскриптор для файлов/ссылок) на общем backend (GigaAM v3_e2e_ctc + multi-provider LLM). Telegram-бот и озвучка (silero TTS) удалены в v1.0.8 — ими никто не пользовался.
 
 ## Главные документы (читай первыми каждую новую сессию!)
 
@@ -47,8 +47,7 @@
 
 - **Один процесс, одна модель GigaAM в RAM** (главный архитектурный принцип).
 - customtkinter в main thread, asyncio в daemon-thread, `ThreadPoolExecutor(max_workers=1)` для GigaAM (shared между всеми интерфейсами).
-- aiogram запускается с `handle_signals=False`.
-- Cross-thread: `asyncio.run_coroutine_threadsafe` для GUI→bot, `queue.Queue + root.after(50)` для bot→GUI.
+- Cross-thread: `asyncio.run_coroutine_threadsafe` для GUI→asyncio, `queue.Queue + root.after(50)` для asyncio→GUI.
 - Данные в `C:\VoiceTypeStudio\data\`, модель в `C:\gigaam_cache\` (как сегодня в Voice Type).
 
 ## Что НЕ делать

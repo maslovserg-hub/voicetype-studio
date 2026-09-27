@@ -71,26 +71,13 @@ def test_shorten_keeps_short_and_cuts_long() -> None:
 # --- structural ---------------------------------------------------------
 
 
-def test_owner_scope_pools_desktop_with_first_whitelist_id() -> None:
-    """The desktop sees both its own rows and the owner's bot rows. The
-    owner is the first entry in ``whitelist_ids`` — extra ids stay
-    isolated so multi-user installs keep privacy."""
-    from core import Settings
-    from core.history import owner_scope
-
-    assert owner_scope(Settings(whitelist_ids=[])) == ("desktop",)
-    assert owner_scope(Settings(whitelist_ids=[123])) == ("desktop", "123")
-    assert owner_scope(Settings(whitelist_ids=[123, 456, 789])) == ("desktop", "123")
-
-
 def test_history_panel_surface() -> None:
     from desktop.history_panel import HistoryPanel
 
     assert HistoryPanel.LIMIT > 0
     assert callable(getattr(HistoryPanel, "refresh", None))
     params = inspect.signature(HistoryPanel.__init__).parameters
-    for name in ("on_open", "get_settings"):
-        assert params[name].kind == inspect.Parameter.KEYWORD_ONLY
+    assert params["on_open"].kind == inspect.Parameter.KEYWORD_ONLY
 
 
 def test_transcriptor_has_history_toggle_and_settings_hook() -> None:

@@ -1,10 +1,9 @@
 """User preferences persisted as JSON.
 
-Structure is shared between the desktop window and the Telegram bot — both
-read the same file. The settings UI in :mod:`desktop.settings_window` writes
+The settings UI in :mod:`desktop.settings_window` writes
 it; everyone else only reads.
 
-Defaults are conservative: bot disabled, no API keys, Perplexity as the
+Defaults are conservative: no API keys, Perplexity as the
 preferred LLM. The file lives in :attr:`core.config.config.data_dir` so
 tests can redirect it via ``monkeypatch.setattr(config, "data_dir", ...)``.
 """
@@ -31,15 +30,6 @@ class Settings:
         default_factory=lambda: ["openai", "anthropic"]
     )
     api_keys: dict[str, str] = field(default_factory=dict)
-    tts_speaker: str = "eugene"
-    bot_enabled: bool = False
-    bot_token: str = ""
-    whitelist_ids: list[int] = field(default_factory=list)
-    # Path to a Netscape-format cookies.txt for YouTube (and other gated
-    # sources). Optional — leave empty for browser auto-detect. Set this if
-    # you're on Yandex Browser (yt-dlp doesn't support it directly) or your
-    # Chrome version is bitten by yt-dlp issue #10927.
-    youtube_cookies_file: str = ""
     # Where «Скачать» saves files. Empty = the system Downloads folder.
     download_dir: str = ""
     # Yandex SpeechKit API key — speech recognition for the «Другой»

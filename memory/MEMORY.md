@@ -1,7 +1,8 @@
 - [No GigaAM model picker in Settings](feedback_no_giga_model_in_settings.md) — жёсткий инвариант проекта: ASR-модель v3_e2e_ctc зашита, в UI/Settings её не выводим
-- [silero TTS sample_rate stays 24000](feedback_silero_24khz_invariant.md) — не возвращать на 48000, силеро v4_ru даёт металлические артефакты на upsample
+- [silero TTS sample_rate stays 24000](feedback_silero_24khz_invariant.md) — УСТАРЕЛО: озвучка удалена в v1.0.8; актуально только если её вернут
 - [Session state 2026-05-11](project_session_2026-05-11.md) — конец дня 11 мая: 183 tests passed, окно «История» собрано, RuTube-формат и TTS 24k фиксы применены, dist/ устарел и ждёт пересборки
 - [No post-build icon patching](feedback_no_postbuild_icon_patch.md) — иконку в готовом PyInstaller exe менять нельзя через CopyIcons_FromIco / UpdateResource: убивает CArchive, exe не стартует
 - [Session state 2026-09-22](project_session_2026-09-22.md) — релиз v1.0.3: Perplexity SSL (просроченный ISRG X2 в хранилище Windows), история панелью в окне, папка скачивания, кнопка обновления; Git затеняет системные find/tar/curl, tar калечит кириллицу
 - [Session state 2026-09-24](project_session_2026-09-24.md) — v1.0.5: язык «Другой» (субтитры YouTube → Yandex SpeechKit), кнопка «Перевод»; Gemini из РФ заблокирован, пунктуация SpeechKit только для русского
 - [Session state 2026-09-25](project_session_2026-09-25.md) — v1.0.6–1.0.7: кнопка «⏹ Стоп» обрывает закачку/ffmpeg/SpeechKit; reload(main) ломал Popen в тестах; отвечать только по-русски
+- [Session state 2026-09-27](project_session_2026-09-27.md) — v1.0.8: удалены Telegram-бот, озвучка и ручной cookies.txt; клик по трею открывает Транскриптор; белый листок на панели задач = битый 8.3-путь иконки в ярлыке «Пуска»

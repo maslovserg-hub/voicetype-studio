@@ -3,24 +3,22 @@
 Wires together everything from ``core/`` and ``desktop/``:
 
 * a single Tk root (customtkinter, DnD-aware via tkinterdnd2);
-* an ``asyncio`` event loop running on a daemon thread (for aiogram and
-  the ``Downloader`` / ``AudioConverter`` / ``Transcriber`` async APIs);
+* an ``asyncio`` event loop running on a daemon thread (for the
+  ``Downloader`` / ``AudioConverter`` / ``Transcriber`` async APIs);
 * a ``ThreadPoolExecutor(max_workers=1)`` shared by dictation, the
-  transcriptor window and the bot — guarantees that GigaAM sees at most
+  transcriptor window — guarantees that GigaAM sees at most
   one in-flight call at a time (the model is not reentrant);
 * tray, overlay, dictation, transcriptor window, settings window;
 * shutdown that joins every helper thread within a 5 s budget.
 
 Architectural invariants kept here:
 
-* customtkinter on the main thread; aiogram in its own daemon thread.
-* ``dp.start_polling(handle_signals=False)`` so aiogram doesn't try to
-  register SIGINT from a non-main thread.
+* customtkinter on the main thread; asyncio in its own daemon thread.
 * GigaAM model lives in exactly one Python object across all UI surfaces
   — the ``Transcriber`` class-level singleton, used through the shared
   executor.
 * Right-Ctrl dictation is **never** persisted — only the transcriptor
-  window and the bot write to ``history.db``.
+  window writes to ``history.db``.
 """
 
 from __future__ import annotations
@@ -57,8 +55,7 @@ from typing import Optional
 import customtkinter as ctk
 from tkinterdnd2 import TkinterDnD
 
-from bot.main import start_bot_polling, stop_bot_polling
-from core import Downloader, Settings, Transcriber, config, settings_io
+from core import Settings, Transcriber, config, settings_io
 from desktop import single_instance
 from desktop.about_window import open_about_window
 from desktop.dictation import DictationListener
@@ -114,11 +111,8 @@ class App:
             max_workers=1, thread_name_prefix="asr",
         )
         # Route every async call into Transcriber through this same executor
-        # — guarantees serial GigaAM access from dictation + window + bot.
+        # — guarantees serial GigaAM access from dictation + window.
         Transcriber.set_executor(self.asr_executor)
-
-        # Optional cookies.txt for yt-dlp (YouTube auth bypass).
-        Downloader.set_cookies_file(self.settings.youtube_cookies_file)
 
         # --- asyncio loop on a daemon thread ---------------------------
         self.bot_loop: asyncio.AbstractEventLoop = asyncio.new_event_loop()
@@ -145,10 +139,6 @@ class App:
             on_open_settings=self._open_settings_safe,
             on_about=self._open_about_safe,
         )
-
-        # --- optional Telegram bot -------------------------------------
-        if self.settings.bot_enabled and self.settings.bot_token.strip():
-            self._start_bot()
 
         # When the (hidden) root receives a "destroy", shut down too.
         self.root.protocol("WM_DELETE_WINDOW", self._quit_safe)
@@ -234,7 +224,6 @@ class App:
             parent,
             settings=self.settings,
             on_save=self._on_settings_saved,
-            bot_loop=self.bot_loop,
             on_open_data_folder=self._open_data_folder,
             on_clean_temp=self._clean_temp_files,
         )
@@ -254,7 +243,6 @@ class App:
         )
 
     def _on_settings_saved(self, new_settings: Settings) -> None:
-        old = self.settings
         try:
             settings_io.save(new_settings)
         except Exception:
@@ -265,30 +253,9 @@ class App:
         if self._transcriptor is not None and _winfo_alive(self._transcriptor):
             self._transcriptor.settings = new_settings
 
-        # Bot lifecycle deltas. Restart triggers:
-        #   * token changed — Bot session needs the new value;
-        #   * whitelist changed — WhitelistMiddleware caches a frozenset at
-        #     construction time, so a running bot still rejects newly added
-        #     IDs until we rebuild the dispatcher.
-        # ``default_provider`` / ``api_keys`` flow through ``workflow_data``
-        # and are picked up on the next handler call — no restart needed.
-        was_on = bool(old.bot_enabled and old.bot_token.strip())
-        is_on = bool(new_settings.bot_enabled and new_settings.bot_token.strip())
-        token_changed = old.bot_token != new_settings.bot_token
-        whitelist_changed = (
-            sorted(old.whitelist_ids) != sorted(new_settings.whitelist_ids)
-        )
-        if is_on and not was_on:
-            self._start_bot()
-        elif was_on and not is_on:
-            self._stop_bot()
-        elif is_on and (token_changed or whitelist_changed):
-            self._stop_bot()
-            self._start_bot()
-
     def _open_data_folder(self) -> None:
         """Open Windows Explorer at ``data_dir`` so the user can see what's
-        stored (history.db, silero/, tts/, tmp/)."""
+        stored (history.db, tmp/)."""
         import subprocess
 
         path = config.data_dir
@@ -305,7 +272,7 @@ class App:
         """Wipe ``data/tmp/`` (downloads, intermediate WAVs, chunk dirs).
 
         Safe to call any time — running tasks write into per-uuid subpaths
-        that we recreate on next download. ``tts/`` and ``history.db`` are
+        that we recreate on next download. ``history.db`` is
         deliberately spared.
         """
         import shutil
@@ -340,45 +307,18 @@ class App:
         except Exception:
             pass
 
-    # ----- bot start/stop wrappers --------------------------------------
-
-    def _start_bot(self) -> None:
-        try:
-            asyncio.run_coroutine_threadsafe(
-                start_bot_polling(
-                    settings=self.settings,
-                    asr_executor=self.asr_executor,
-                ),
-                self.bot_loop,
-            )
-        except Exception:
-            logger.exception("Failed to dispatch bot start")
-
-    def _stop_bot(self) -> None:
-        try:
-            fut = asyncio.run_coroutine_threadsafe(
-                stop_bot_polling(), self.bot_loop,
-            )
-            fut.result(timeout=self.SHUTDOWN_TIMEOUT_S)
-        except Exception:
-            logger.exception("Failed to stop bot cleanly")
-
     # ----- shutdown -----------------------------------------------------
 
     def shutdown(self) -> None:
         """Best-effort tear-down with hard timeouts.
 
-        Order matters: stop external callers (bot, dictation, tray) before
+        Order matters: stop external callers (dictation, tray) before
         joining the asyncio thread; destroy the Tk root last so anything
         still calling ``root.after`` from a daemon thread doesn't blow up.
         """
         logger.info("Shutting down VoiceType Studio")
 
         # 1. stop accepting external triggers
-        try:
-            self._stop_bot()
-        except Exception:
-            pass
         try:
             self.dictation.stop()
         except Exception:

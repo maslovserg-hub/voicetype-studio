@@ -1,6 +1,6 @@
 """Smoke tests for ``core/`` after the bot→core rename.
 
-These do not exercise GigaAM/silero (heavy, network-dependent) — they just
+These do not exercise GigaAM (heavy, network-dependent) — they just
 verify that the package imports cleanly and that the SQLite history layer
 round-trips a Segment with word timings.
 """
@@ -21,7 +21,6 @@ def test_imports() -> None:
         Formatter,
         OutputFormat,
         Segment,
-        TTSService,
         Transcriber,
         Word,
         config,
@@ -36,7 +35,7 @@ def test_imports() -> None:
     assert transcript_cache.__name__ == "core.transcript_cache"
     # Public classes / enums survived the move.
     assert OutputFormat.TEXT.value == "text"
-    for cls in (Transcriber, Downloader, AudioConverter, Formatter, TTSService):
+    for cls in (Transcriber, Downloader, AudioConverter, Formatter):
         assert isinstance(cls, type)
     # Word / Segment dataclasses.
     w = Word(start=0.0, end=0.5, text="hi")
@@ -121,10 +120,9 @@ def test_history_user_id_isolation(tmp_path, monkeypatch) -> None:
 
 
 def test_config_paths_are_lazy(tmp_path, monkeypatch) -> None:
-    """``temp_dir`` / ``history_db`` / ``silero_dir`` derive from data_dir."""
+    """``temp_dir`` / ``history_db`` derive from data_dir."""
     from core import config
 
     monkeypatch.setattr(config, "data_dir", tmp_path)
     assert config.temp_dir == tmp_path / "tmp"
     assert config.history_db == tmp_path / "history.db"
-    assert config.silero_dir == tmp_path / "silero"

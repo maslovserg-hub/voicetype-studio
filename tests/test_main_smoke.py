@@ -1,4 +1,4 @@
-"""Smoke tests for main.py and the bot stub.
+"""Smoke tests for main.py.
 
 We don't actually run ``App()`` — instantiating it would create a Tk root,
 spin up the asyncio thread, register a global hotkey listener, and put a
@@ -7,15 +7,10 @@ some of it is destructive (mutex-grab) on the developer's own machine.
 
 Instead we check that the wiring is sound:
 * ``main`` imports cleanly with all heavy deps already on the path;
-* ``main.App`` exposes the methods main.py's call sites depend on;
-* the bot stub exposes a sane ``start_bot_polling`` / ``stop_bot_polling``
-  pair so ``App._start_bot`` won't crash on boot.
+* ``main.App`` exposes the methods main.py's call sites depend on.
 """
 
 from __future__ import annotations
-
-import asyncio
-import inspect
 
 import pytest
 
@@ -40,8 +35,6 @@ def test_main_module_imports() -> None:
         "_open_about_safe",
         "_on_settings_saved",
         "_transcribe_for_dictation",
-        "_start_bot",
-        "_stop_bot",
         "_quit",
         "_run_loop",
     ],
@@ -70,40 +63,3 @@ def test_main_subprocess_patch_idempotent() -> None:
     # still in scope.
     assert callable(subprocess.Popen.__init__)
 
-
-# --- bot stub --------------------------------------------------------------
-
-
-def test_bot_stub_signatures() -> None:
-    from bot.main import is_running, start_bot_polling, stop_bot_polling
-
-    assert inspect.iscoroutinefunction(start_bot_polling)
-    assert inspect.iscoroutinefunction(stop_bot_polling)
-    assert callable(is_running)
-
-
-def test_bot_stub_lifecycle() -> None:
-    """Stub must allow start → stop without raising and update is_running()."""
-    from bot import main as bot_main
-    from core import Settings
-
-    # Reset module-level state in case another test mutated it.
-    bot_main._running = False
-
-    settings = Settings(bot_enabled=True, bot_token="123:abc")
-
-    asyncio.run(bot_main.start_bot_polling(settings=settings, asr_executor=None))
-    assert bot_main.is_running() is True
-
-    asyncio.run(bot_main.stop_bot_polling())
-    assert bot_main.is_running() is False
-
-
-def test_bot_stub_skips_when_no_token() -> None:
-    from bot import main as bot_main
-    from core import Settings
-
-    bot_main._running = False
-    settings = Settings(bot_enabled=True, bot_token="   ")
-    asyncio.run(bot_main.start_bot_polling(settings=settings, asr_executor=None))
-    assert bot_main.is_running() is False

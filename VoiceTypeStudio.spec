@@ -9,8 +9,7 @@ Build:
     venv\\Scripts\\pyinstaller VoiceTypeStudio.spec
 
 The model (~440 MB GigaAM v3_e2e_ctc) is NOT bundled — it lives in
-``C:\\gigaam_cache\\`` and is downloaded on first ASR call. Same with
-silero v4_ru (~50 MB) which lands under ``%APPDATA%\\VoiceTypeStudio\\silero``.
+``C:\\gigaam_cache\\`` and is downloaded on first ASR call.
 """
 
 from PyInstaller.utils.hooks import collect_all
@@ -21,8 +20,6 @@ datas = [
     ('assets/icon.ico', 'assets'),
     ('assets/icon_64.png', 'assets'),
     ('assets/icon_256.png', 'assets'),
-    # Bot welcome photo — sent on /start in Telegram.
-    ('assets/bot.png', 'assets'),
     # Update script — «Обновить» in Настройки copies it to TEMP and runs it.
     ('tools/VoiceTypeStudio-Update.bat', 'tools'),
 ]
@@ -37,10 +34,6 @@ hiddenimports = [
     'sentencepiece',
     'hydra._internal.utils',
     'hydra._internal.instantiate._internal.utils',
-    # aiogram's filter machinery uses lazy imports.
-    'magic_filter',
-    'aiogram.fsm.storage.memory',
-    'aiogram.client.session.aiohttp',
 ]
 
 
@@ -63,9 +56,7 @@ _collect('omegaconf')
 _collect('customtkinter')
 _collect('tkinterdnd2')
 
-# Bot / async stack.
-_collect('aiogram')
-_collect('pydantic')
+# Async HTTP stack.
 _collect('aiohttp')
 _collect('aiofiles')
 

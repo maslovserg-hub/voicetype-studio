@@ -92,12 +92,8 @@ class AppConfig:
     def history_db(self) -> Path:
         return self.data_dir / "history.db"
 
-    @property
-    def silero_dir(self) -> Path:
-        return self.data_dir / "silero"
-
     def ensure_dirs(self) -> None:
-        for p in (self.data_dir, self.temp_dir, self.silero_dir, self.gigaam_cache_dir):
+        for p in (self.data_dir, self.temp_dir, self.gigaam_cache_dir):
             p.mkdir(parents=True, exist_ok=True)
 
 

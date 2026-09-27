@@ -1,18 +1,14 @@
 """Verify that pre-downloaded models are reused, not re-downloaded.
 
 The user's machine already has GigaAM v3_e2e_ctc (422 MB) under
-``C:\\gigaam_cache\\`` and silero v4_ru (38 MB) under
-``~/.cache/silero/``. A fresh install on a different machine wouldn't have
-either, but on this machine our code MUST pick them up.
+``C:\\gigaam_cache\\``. A fresh install on a different machine wouldn't have
+it, but on this machine our code MUST pick it up.
 """
 
 from __future__ import annotations
 
 import sys
-from pathlib import Path
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 
 # ---- GigaAM ------------------------------------------------------------
@@ -125,99 +121,3 @@ def test_transcriber_resolve_model_honours_monkeypatched_config(monkeypatch) -> 
     # Reset so other tests aren't affected.
     Transcriber._model_name = None
 
-
-# ---- silero -----------------------------------------------------------
-
-
-def test_tts_reuses_existing_project_copy(tmp_path, monkeypatch) -> None:
-    from core import config
-    from core.tts import TTSService
-
-    silero_dir = tmp_path / "silero"
-    silero_dir.mkdir()
-    target = silero_dir / "v4_ru.pt"
-    target.write_bytes(b"x" * 2_000_000)  # > 1 MB threshold
-
-    monkeypatch.setattr(config, "data_dir", tmp_path)
-
-    resolved = TTSService._ensure_model_downloaded()
-    assert resolved == target
-
-
-def test_tts_reuses_torch_hub_copy_when_ascii(tmp_path, monkeypatch) -> None:
-    """If the project cache is empty but ``~/.cache/silero/v4_ru.pt`` exists
-    AND the home path is ASCII, point at it directly — no copy, no download."""
-    try:
-        str(tmp_path).encode("ascii")
-    except UnicodeEncodeError:
-        pytest.skip("tmp_path itself is non-ASCII on this machine")
-
-    from core import config
-    from core.tts import TTSService
-
-    monkeypatch.setattr(config, "data_dir", tmp_path / "data")
-
-    home = tmp_path / "ascii_home"  # all-ASCII
-    silero_cache = home / ".cache" / "silero"
-    silero_cache.mkdir(parents=True)
-    cached = silero_cache / "v4_ru.pt"
-    cached.write_bytes(b"y" * 2_000_000)
-
-    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
-
-    resolved = TTSService._ensure_model_downloaded()
-    assert resolved == cached
-    # Project copy was NOT created — we just reused the cached one.
-    assert not (tmp_path / "data" / "silero" / "v4_ru.pt").exists()
-
-
-def test_tts_copies_when_home_path_has_non_ascii(tmp_path, monkeypatch) -> None:
-    """Mirrors the real machine: ``C:\\Users\\Сергей\\.cache\\silero\\v4_ru.pt``.
-    PackageImporter rejects non-ASCII paths, so we copy to the project dir."""
-    from core import config
-    from core.tts import TTSService
-
-    monkeypatch.setattr(config, "data_dir", tmp_path / "data")
-
-    home = tmp_path / "Сергей_home"  # Cyrillic — non-ASCII
-    silero_cache = home / ".cache" / "silero"
-    silero_cache.mkdir(parents=True)
-    cached = silero_cache / "v4_ru.pt"
-    cached.write_bytes(b"z" * 2_000_000)
-
-    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
-
-    resolved = TTSService._ensure_model_downloaded()
-    project_target = tmp_path / "data" / "silero" / "v4_ru.pt"
-    assert resolved == project_target
-    assert project_target.exists()
-    assert project_target.read_bytes() == cached.read_bytes()
-
-
-def test_tts_downloads_when_nothing_cached(tmp_path, monkeypatch) -> None:
-    from core import config
-    from core.tts import TTSService
-
-    monkeypatch.setattr(config, "data_dir", tmp_path / "data")
-    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path / "empty_home"))
-
-    download_calls = []
-
-    def fake_urlretrieve(url, dest):
-        download_calls.append((url, dest))
-        Path(dest).write_bytes(b"q" * 2_000_000)
-
-    monkeypatch.setattr("urllib.request.urlretrieve", fake_urlretrieve)
-
-    resolved = TTSService._ensure_model_downloaded()
-    expected = tmp_path / "data" / "silero" / "v4_ru.pt"
-    assert resolved == expected
-    assert len(download_calls) == 1
-    assert download_calls[0][0] == TTSService._MODEL_URL
-
-
-def test_is_ascii_path_helper() -> None:
-    from core.tts import _is_ascii_path
-
-    assert _is_ascii_path(Path("C:/foo/bar.pt")) is True
-    assert _is_ascii_path(Path("C:/Users/Сергей/file.pt")) is False

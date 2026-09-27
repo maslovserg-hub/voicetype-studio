@@ -1,6 +1,6 @@
 """Core backend for VoiceType Studio.
 
-UI-agnostic. Used identically by ``desktop/`` and ``bot/``.
+UI-agnostic. Used by ``desktop/``.
 
 The public surface is the set of names re-exported here. Submodules
 ``history`` and ``transcript_cache`` are exposed as modules (callers do
@@ -30,7 +30,6 @@ from .llm import (
 from .settings import Settings
 from .summarizer import Summarizer
 from .transcriber import Segment, Transcriber, Word
-from .tts import TTSService
 
 __all__ = [
     "AnthropicProvider",
@@ -48,7 +47,6 @@ __all__ = [
     "Summarizer",
     "SummaryMode",
     "TIMESTAMPED_MODES",
-    "TTSService",
     "Transcriber",
     "Word",
     "config",

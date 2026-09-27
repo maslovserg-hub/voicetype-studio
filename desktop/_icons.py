@@ -74,3 +74,16 @@ def as_ctk_image(pil_image: Image.Image, size: int):
         dark_image=pil_image,
         size=(size, size),
     )
+
+
+def apply_app_icon(win) -> None:
+    """Give a CTkToplevel our .ico in the title bar and taskbar.
+
+    CTkToplevel schedules its own ``iconbitmap`` 200 ms after creation,
+    overriding the root's ``iconbitmap(default=...)``. Re-apply ours after it.
+    """
+    from core.assets import icon_ico_path
+
+    ico = icon_ico_path()
+    if ico:
+        win.after(250, lambda: win.iconbitmap(ico))

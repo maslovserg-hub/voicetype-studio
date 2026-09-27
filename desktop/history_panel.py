@@ -24,8 +24,7 @@ from typing import Callable
 
 import customtkinter as ctk
 
-from core import Segment, Settings, history
-from core.history import owner_scope
+from core import Segment, history
 
 logger = logging.getLogger(__name__)
 
@@ -51,8 +50,8 @@ def pretty_date(raw: str) -> str:
 def transcript_row_text(row: dict) -> tuple[str, str]:
     """``(title, date)`` for one transcription card.
 
-    💻 marks desktop rows, 📱 rows sent through the Telegram bot (the
-    owner view pools both).
+    💻 marks desktop rows, 📱 older rows sent through the removed
+    Telegram bot.
     """
     glyph = "💻" if row.get("user_id") == "desktop" else "📱"
     label = shorten(row.get("label") or "(без названия)", 28)
@@ -69,7 +68,7 @@ def reveal_in_explorer(path: Path) -> None:
 
 
 class HistoryPanel(ctk.CTkFrame):
-    """Collapsible left panel; ``get_settings`` feeds the owner scope."""
+    """Collapsible left panel with the transcription history."""
 
     LIMIT = 50
     WIDTH = 300
@@ -79,11 +78,9 @@ class HistoryPanel(ctk.CTkFrame):
         master,
         *,
         on_open: Callable[[dict, list[Segment]], None],
-        get_settings: Callable[[], Settings],
     ):
         super().__init__(master, width=self.WIDTH)
         self._on_open = on_open
-        self._get_settings = get_settings
         self._rows: list[ctk.CTkBaseClass] = []
 
         self._tabs = ctk.CTkSegmentedButton(
@@ -115,7 +112,7 @@ class HistoryPanel(ctk.CTkFrame):
     # ----- tabs ---------------------------------------------------------
 
     def _scope(self) -> tuple[str, ...]:
-        return owner_scope(self._get_settings())
+        return ("desktop",)
 
     def _fill_transcripts(self) -> None:
         try:

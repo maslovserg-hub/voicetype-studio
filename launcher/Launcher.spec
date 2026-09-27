@@ -27,6 +27,7 @@ a = Analysis(
         'win32com.shell.shell',
         'pythoncom',
         'pywintypes',
+        'win32api',
     ],
     hookspath=[],
     hooksconfig={},

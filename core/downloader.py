@@ -195,8 +195,6 @@ class Downloader:
                 "noplaylist": True,
                 "js_runtimes": {"node": {"path": None}},
             }
-            if cls._cookies_file:
-                opts["cookiefile"] = cls._cookies_file
             with yt_dlp.YoutubeDL(opts) as ydl:
                 info = ydl.extract_info(url, download=False)
                 track = _pick_subtitle_track(info or {})
@@ -263,27 +261,9 @@ class Downloader:
     #     older Chrome builds.
     #
     # Yandex Browser is *not* listed here — yt-dlp errors with
-    # ``unsupported browser: "yandex"``. Users on Yandex Browser should
-    # export cookies.txt and set ``settings.youtube_cookies_file``.
+    # ``unsupported browser: "yandex"``. Yandex cookies are read by
+    # ``cookies_extractor`` instead (step 2 in ``_download``).
     _COOKIE_BROWSERS = ("firefox", "brave", "opera", "vivaldi", "chrome", "edge")
-
-    # Optional Netscape-format cookies.txt file. Set by ``main.py`` from
-    # ``settings.youtube_cookies_file``; if non-empty and the file exists
-    # we hand it to yt-dlp directly via ``cookiefile=``, bypassing all
-    # browser auto-detection.
-    _cookies_file: Optional[str] = None
-
-    @classmethod
-    def set_cookies_file(cls, path: Optional[str]) -> None:
-        """Configure the Netscape-format cookies.txt yt-dlp should use.
-
-        ``path`` may be ``None`` or empty to clear. ``main.py`` calls this
-        at startup with ``settings.youtube_cookies_file`` and again from
-        ``_on_settings_saved`` so the live downloader reflects edits made
-        in the Settings window without a restart.
-        """
-        cleaned = (path or "").strip()
-        cls._cookies_file = cleaned or None
 
     @classmethod
     async def _download_ytdlp(
@@ -472,12 +452,7 @@ class Downloader:
             return tmp
 
         def _download() -> Path:
-            # 1) Explicit cookies.txt from settings always wins.
-            cfg_cookies = cls._cookies_file
-            if cfg_cookies and Path(cfg_cookies).exists():
-                return _try_with_cookies_file(cfg_cookies)
-
-            # 2) Vanilla attempt — most non-gated content downloads in one shot.
+            # 1) Vanilla attempt — most non-gated content downloads in one shot.
             first_error = ""
             try:
                 return _try_browser(None)
@@ -509,7 +484,7 @@ class Downloader:
                 if not _looks_like_bot_check(first_error):
                     raise RuntimeError(first_error) from exc
 
-            # 3) Bot check — auto-extract cookies from the local browsers
+            # 2) Bot check — auto-extract cookies from the local browsers
             #    using our own Chromium decryption (covers Yandex Browser
             #    and Chrome 127+, both of which yt-dlp's own browser
             #    plumbing fails on).
@@ -527,7 +502,7 @@ class Downloader:
                 finally:
                     Path(harvested).unlink(missing_ok=True)
 
-            # 4) Last resort: yt-dlp's own ``cookies-from-browser``. This
+            # 3) Last resort: yt-dlp's own ``cookies-from-browser``. This
             #    will fail on Chrome 127+ (DPAPI) and on Yandex (unsupported)
             #    but might rescue Firefox-only users.
             errors: list[str] = []
@@ -567,11 +542,6 @@ class Downloader:
                 "• Самый надёжный путь: установите Firefox, войдите в YouTube "
                 "(или RuTube / VK) один раз — Firefox не использует "
                 "app-bound encryption, мы прочитаем его cookies автоматически."
-            )
-            advice.append(
-                "• Альтернатива: экспортируйте cookies.txt расширением "
-                "«Get cookies.txt LOCALLY» в любом браузере и укажите файл в "
-                "Настройках → «YouTube cookies»."
             )
 
             running_summary = (

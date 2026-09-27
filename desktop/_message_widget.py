@@ -39,7 +39,6 @@ from ._format_dispatch import (
     FormatResult,
     LLM_FORMATS,
     TEXT_FORMATS,
-    TTS_FORMAT,
     file_extension_for,
 )
 
@@ -47,10 +46,10 @@ logger = logging.getLogger(__name__)
 
 
 # Two visual rows of buttons: text formats (+ translation) first, AI second.
-# «Перевод» sits in the first row so the second one stays at five buttons.
+# «Перевод» sits in the first row so the second one stays at four buttons.
 _BUTTON_ROWS: tuple[tuple[str, ...], ...] = (
     TEXT_FORMATS + ("translate",),
-    tuple(k for k in LLM_FORMATS if k != "translate") + (TTS_FORMAT,),
+    tuple(k for k in LLM_FORMATS if k != "translate"),
 )
 
 WidgetState = Literal["processing", "done", "downloaded", "error"]
@@ -315,9 +314,8 @@ class MessageWidget(ctk.CTkFrame):
     # ----- format-button result wiring -----------------------------------
 
     # Per-format button-busy labels — surface what's actually happening
-    # during a long-running synthesis or LLM call.
+    # during a long-running LLM call.
     _BUSY_LABELS: dict = {
-        "tts": "🔊 Озвучиваю… (10–30 сек)",
         "brief": "📋 Считаю тезисы…",
         "structured": "📚 Структурирую…",
         "roles": "🎭 Размечаю по ролям…",
@@ -354,12 +352,7 @@ class MessageWidget(ctk.CTkFrame):
                 fill="both", expand=True, padx=12, pady=(0, 8)
             )
 
-        if result.kind == "text":
-            self._render_text(self._result_frame, result.content)
-        else:
-            self._render_audio(
-                self._result_frame, result.content, result.preview_text or ""
-            )
+        self._render_text(self._result_frame, result.content)
 
     def show_format_error(self, format_key: str, message: str) -> None:
         btn = self._format_buttons.get(format_key)
@@ -418,53 +411,6 @@ class MessageWidget(ctk.CTkFrame):
             command=self._clear_result,
         ).pack(side="left", padx=2)
 
-    def _render_audio(
-        self,
-        parent: ctk.CTkFrame,
-        wav_path: str,
-        preview_text: str,
-    ) -> None:
-        # Header with play button right-aligned for prominence — without
-        # this users were getting stuck at "preparing…" state, missing that
-        # synthesis already finished and they just need to click play.
-        header = ctk.CTkFrame(parent, fg_color="transparent")
-        header.pack(fill="x")
-        ctk.CTkLabel(
-            header,
-            text=f"🔊 Озвучка готова — {Path(wav_path).name}",
-            anchor="w",
-            font=ctk.CTkFont(weight="bold"),
-        ).pack(side="left", fill="x", expand=True)
-        ctk.CTkButton(
-            header,
-            text="▶ Воспроизвести",
-            width=160,
-            height=36,
-            font=ctk.CTkFont(size=13, weight="bold"),
-            command=lambda: _open_in_default_player(wav_path),
-        ).pack(side="right")
-
-        if preview_text:
-            preview = ctk.CTkTextbox(parent, height=100, wrap="word")
-            preview.insert("0.0", preview_text)
-            preview.pack(fill="both", expand=True, pady=(6, 0))
-            attach_clipboard_menu(preview, paste=False, cut=False)
-
-        actions = ctk.CTkFrame(parent, fg_color="transparent")
-        actions.pack(fill="x", pady=(6, 0))
-        ctk.CTkButton(
-            actions, text="Сохранить как…", width=130,
-            command=lambda: self._save_audio_as(wav_path),
-        ).pack(side="left", padx=2)
-        ctk.CTkButton(
-            actions, text="Открыть папку", width=130,
-            command=lambda: _open_containing_folder(wav_path),
-        ).pack(side="left", padx=2)
-        ctk.CTkButton(
-            actions, text="Очистить", width=90,
-            command=self._clear_result,
-        ).pack(side="left", padx=2)
-
     def _clear_result(self) -> None:
         if self._result_frame is not None:
             try:
@@ -499,20 +445,6 @@ class MessageWidget(ctk.CTkFrame):
         except Exception:
             logger.exception("Failed to save text result to %s", path)
 
-    def _save_audio_as(self, source_wav: str) -> None:
-        from shutil import copyfile
-        from tkinter import filedialog
-
-        path = filedialog.asksaveasfilename(
-            defaultextension=".wav",
-            filetypes=[("WAV audio", "*.wav"), ("All", "*.*")],
-        )
-        if not path:
-            return
-        try:
-            copyfile(source_wav, path)
-        except Exception:
-            logger.exception("Failed to copy audio %s -> %s", source_wav, path)
 
 
 _BOLD_RE = re.compile(r"\*\*(.+?)\*\*", flags=re.DOTALL)
@@ -555,34 +487,3 @@ def _insert_with_markdown_bold(textbox: "ctk.CTkTextbox", text: str) -> None:
         cursor = m.end()
     if cursor < len(text):
         textbox.insert("end", text[cursor:])
-
-
-def _open_in_default_player(path: str) -> None:
-    """Best-effort: open the file in the OS default app."""
-    try:
-        if sys.platform == "win32":
-            os.startfile(path)  # noqa: SIM115 — Windows-only API
-        elif sys.platform == "darwin":
-            import subprocess
-            subprocess.Popen(["open", path])
-        else:
-            import subprocess
-            subprocess.Popen(["xdg-open", path])
-    except Exception:
-        logger.exception("Failed to open %s", path)
-
-
-def _open_containing_folder(path: str) -> None:
-    """Open the folder that contains ``path`` and select the file (Windows)."""
-    try:
-        if sys.platform == "win32":
-            import subprocess
-            subprocess.Popen(["explorer", "/select,", str(path)])
-        elif sys.platform == "darwin":
-            import subprocess
-            subprocess.Popen(["open", "-R", str(path)])
-        else:
-            import subprocess
-            subprocess.Popen(["xdg-open", str(Path(path).parent)])
-    except Exception:
-        logger.exception("Failed to open folder for %s", path)

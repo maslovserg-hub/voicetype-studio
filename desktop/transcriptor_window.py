@@ -52,7 +52,7 @@ from core.settings import Settings
 
 from ._clipboard_menu import attach_clipboard_menu
 from ._format_dispatch import FormatResult, deliver_format
-from ._icons import as_ctk_image, make_attach_icon
+from ._icons import apply_app_icon, as_ctk_image, make_attach_icon
 from ._message_widget import MessageWidget
 from .history_panel import HistoryPanel
 
@@ -236,6 +236,7 @@ class TranscriptorWindow(ctk.CTkToplevel):
     ):
         super().__init__(master)
         self.title("VoiceType Studio — Транскриптор")
+        apply_app_icon(self)
         self.geometry("900x700")
         self.minsize(640, 480)
 
@@ -275,7 +276,6 @@ class TranscriptorWindow(ctk.CTkToplevel):
         self._history_panel = HistoryPanel(
             body,
             on_open=self._open_history_row,
-            get_settings=lambda: self.settings,
         )
 
         # --- feed ----------------------------------------------------

@@ -133,22 +133,26 @@ def create_start_menu_shortcut() -> bool:
 
     shortcut_path = _start_menu_shortcut_path()
     os.makedirs(os.path.dirname(shortcut_path), exist_ok=True)
-    working_dir = os.path.dirname(EXE_PATH)
 
     try:
         import pythoncom
+        import win32api
         from win32com.shell import shell as win_shell
     except ImportError:
         return False
 
     try:
+        # %APPDATA% can arrive in 8.3 form (C:\Users\D899~1\...). An icon
+        # path stored that way breaks once the short name is gone, and the
+        # taskbar then shows a blank icon for the running app.
+        exe_long = win32api.GetLongPathName(EXE_PATH)
         link = pythoncom.CoCreateInstance(
             win_shell.CLSID_ShellLink, None,
             pythoncom.CLSCTX_INPROC_SERVER, win_shell.IID_IShellLinkW,
         )
-        link.SetPath(EXE_PATH)
-        link.SetWorkingDirectory(working_dir)
-        link.SetIconLocation(EXE_PATH, 0)
+        link.SetPath(exe_long)
+        link.SetWorkingDirectory(os.path.dirname(exe_long))
+        link.SetIconLocation(exe_long, 0)
         link.SetDescription("VoiceType Studio")
         persist = link.QueryInterface(pythoncom.IID_IPersistFile)
         persist.Save(shortcut_path, True)

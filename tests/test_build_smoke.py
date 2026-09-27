@@ -56,8 +56,6 @@ def test_main_spec_collects_required_packages() -> None:
         "torchaudio",
         "customtkinter",
         "tkinterdnd2",
-        "aiogram",
-        "pydantic",
         "yt_dlp",
         "pydub",
     ):
@@ -313,5 +311,5 @@ def test_requirements_txt_lists_studio_only_deps() -> None:
     """customtkinter and tkinterdnd2 are Studio-only; if they're missing
     here, ``pip install -r requirements.txt`` won't seed a build env."""
     req = (PROJECT_ROOT / "requirements.txt").read_text(encoding="utf-8").lower()
-    for pkg in ("customtkinter", "tkinterdnd2", "aiogram"):
+    for pkg in ("customtkinter", "tkinterdnd2"):
         assert pkg in req, f"requirements.txt missing {pkg!r}"

@@ -7,7 +7,6 @@ the same files live in ``<repo>/assets/``. This module hides the fork.
 Used by:
 * ``desktop/tray.py`` — tray icon PNG;
 * ``main.py`` — Tk root ``iconbitmap``;
-* ``bot/handlers/start.py`` — ``/start`` welcome photo.
 """
 
 from __future__ import annotations
@@ -37,10 +36,6 @@ def icon_ico_path() -> str | None:
 
 def icon_png_path(size: int = 64) -> str | None:
     return asset_path(f"icon_{size}.png")
-
-
-def bot_welcome_photo_path() -> str | None:
-    return asset_path("bot.png")
 
 
 def load_icon_image(size: int = 64):

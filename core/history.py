@@ -3,8 +3,8 @@
 Stores enough to rebuild the segment list (with words) on demand, so the user
 can ask for any format/summary later without re-transcribing.
 
-``user_id`` is stored as TEXT — it holds either the Telegram numeric id (as a
-string) or the literal ``"desktop"`` for transcriptor-window jobs. Dictation
+``user_id`` is stored as TEXT — ``"desktop"`` for transcriptor-window jobs
+(older rows may hold a Telegram numeric id from the removed bot). Dictation
 results are not saved (по плану — это «голосовая клавиатура»).
 """
 
@@ -181,28 +181,6 @@ def get_segments(transcript_id: int, scope: UserScope) -> Optional[List[Segment]
     except Exception:
         logger.exception("Failed to deserialize history row %d", transcript_id)
         return None
-
-
-def owner_scope(settings) -> tuple[str, ...]:
-    """Build the "owner view" history scope from a :class:`core.Settings`.
-
-    ``whitelist_ids[0]`` is treated as the desktop user's Telegram id —
-    pooling their bot history with the local ``"desktop"`` rows. Other
-    whitelist members stay isolated and only see their own messages.
-    Returns at least ``("desktop",)`` so the desktop UI always has its
-    own rows even when no Telegram is configured.
-    """
-    ids: list[str] = ["desktop"]
-    wl = getattr(settings, "whitelist_ids", None) or []
-    if wl:
-        ids.append(str(wl[0]))
-    return tuple(ids)
-
-
-def is_owner(settings, telegram_id: int) -> bool:
-    """True if ``telegram_id`` is the configured owner (first whitelist id)."""
-    wl = getattr(settings, "whitelist_ids", None) or []
-    return bool(wl) and int(wl[0]) == int(telegram_id)
 
 
 def _seg_to_dict(s: Segment) -> dict:

@@ -83,7 +83,7 @@ def build_tray(
     items = [
         pystray.MenuItem("VoiceType Studio", None, enabled=False),
         pystray.Menu.SEPARATOR,
-        pystray.MenuItem("Транскриптор", _wrap(on_open_transcriptor)),
+        pystray.MenuItem("Транскриптор", _wrap(on_open_transcriptor), default=True),
     ]
     if on_open_settings is not None:
         items.append(pystray.MenuItem("Настройки", _wrap(on_open_settings)))
