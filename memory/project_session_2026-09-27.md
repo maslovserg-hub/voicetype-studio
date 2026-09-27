@@ -23,3 +23,6 @@ type: project
 
 ## Релиз
 [v1.0.8](https://github.com/maslovserg-hub/voicetype-studio/releases/tag/v1.0.8): zip 219 670 247 б (плоский, без aiogram), новый Setup.exe (фикс ярлыка), Update.bat. `releases/latest` → v1.0.8 проверено. Локально установлен (robocopy /MIR `_internal` + exe) и запущен; иконку на панели задач пользователь подтвердил.
+
+## Архив бота
+По просьбе пользователя бот сохранён в `archive/bot-v1.0.7/` (bot/, тесты, bot.png, README с тем, что ещё подключить обратно). `pyproject.toml`: `testpaths = ["tests"]`, чтобы pytest не собирал архивные тесты.
