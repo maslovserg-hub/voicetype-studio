@@ -34,7 +34,10 @@ def test_update_script_shipped_and_sane() -> None:
     assert script.is_file()
     raw = script.read_bytes()
     assert b"\r\n" in raw and raw.count(b"\r\n") == raw.count(b"\n")
-    text = raw.decode("utf-8")
+    # CP866, not UTF-8: under "chcp 65001" cmd misreads a UTF-8 .bat and
+    # runs fragments of lines.
+    text = raw.decode("cp866")
+    assert "chcp 866 >nul" in text and "65001" not in text
     assert "releases/latest/download/VoiceTypeStudio_release.zip" in text
     # Every external tool by absolute path. Git puts its own find/tar/curl
     # ahead of the Windows ones on PATH, and Git's `find` made the
