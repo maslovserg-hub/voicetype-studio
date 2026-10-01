@@ -1,12 +1,12 @@
-"""Settings window — sections (AI / downloads / …) on a scrollable
-CTk pane.
+"""Settings panel — sections (AI / downloads / …) on a scrollable
+CTk pane, slid in over the Transcriptor window.
 
 Per FR-9 of the spec. Pure helpers (`display_to_provider_key`, …) live at module level so they can be unit-
-tested without standing up a Tk root. The window itself is invoked from
-``main.py`` via :func:`open_settings_window`, which builds, blocks (modal-
-ish), and writes the result back through an ``on_save`` callback.
+tested without standing up a Tk root. The panel is opened by
+:meth:`TranscriptorWindow.open_settings` and writes the result back
+through an ``on_save`` callback.
 
-The window does not itself read or write ``settings.json`` — the caller
+The panel does not itself read or write ``settings.json`` — the caller
 hands in the current :class:`Settings` and decides what to do with the
 edited copy.
 """
@@ -21,7 +21,6 @@ import customtkinter as ctk
 from core import Settings
 
 from ._clipboard_menu import attach_clipboard_menu
-from ._icons import apply_app_icon
 
 logger = logging.getLogger(__name__)
 
@@ -52,11 +51,13 @@ def provider_key_to_display(key: str) -> str:
     return PROVIDER_DISPLAY.get(key, key)
 
 
-# --- main window ---------------------------------------------------------
+# --- panel ---------------------------------------------------------
 
 
-class SettingsWindow(ctk.CTkToplevel):
+class SettingsPanel(ctk.CTkFrame):
     """Editable form for one :class:`Settings` instance."""
+
+    WIDTH = 560
 
     def __init__(
         self,
@@ -66,13 +67,11 @@ class SettingsWindow(ctk.CTkToplevel):
         on_save: Callable[[Settings], None],
         on_open_data_folder: Optional[Callable[[], None]] = None,
         on_clean_temp: Optional[Callable[[], None]] = None,
+        on_close: Callable[[], None] = lambda: None,
     ):
-        super().__init__(master)
-        self.title("VoiceType Studio — Настройки")
-        apply_app_icon(self)
-        self.geometry("620x700")
-        self.minsize(520, 600)
-        self.transient(master)
+        super().__init__(master, width=self.WIDTH, border_width=1)
+        self.pack_propagate(False)  # keep WIDTH, don't shrink to content
+        self._on_close = on_close
 
         self._initial = settings
         self._on_save = on_save
@@ -100,8 +99,6 @@ class SettingsWindow(ctk.CTkToplevel):
             footer, text="", text_color="#ff6b6b", anchor="w",
         )
         self._error_label.pack(side="left", fill="x", expand=True)
-
-        self.protocol("WM_DELETE_WINDOW", self._cancel)
 
     # ----- builders -----------------------------------------------------
 
@@ -234,10 +231,10 @@ class SettingsWindow(ctk.CTkToplevel):
             logger.exception("on_save callback raised")
             self._error_label.configure(text=f"Не удалось сохранить: {exc}")
             return
-        self.destroy()
+        self._on_close()
 
     def _cancel(self) -> None:
-        self.destroy()
+        self._on_close()
 
     # ----- form ↔ Settings mapping --------------------------------------
 
@@ -255,28 +252,6 @@ class SettingsWindow(ctk.CTkToplevel):
             download_dir=self._download_dir_entry.get().strip(),
             speechkit_api_key=self._speechkit_entry.get().strip(),
         )
-
-
-# --- standalone-ish entry point used by main.py --------------------------
-
-
-def open_settings_window(
-    master,
-    *,
-    settings: Settings,
-    on_save: Callable[[Settings], None],
-    on_open_data_folder: Optional[Callable[[], None]] = None,
-    on_clean_temp: Optional[Callable[[], None]] = None,
-) -> SettingsWindow:
-    """Build, show, and return the window. Caller keeps the reference so it
-    isn't garbage-collected before the user closes it."""
-    win = SettingsWindow(
-        master, settings=settings, on_save=on_save,
-        on_open_data_folder=on_open_data_folder, on_clean_temp=on_clean_temp,
-    )
-    win.lift()
-    win.focus_force()
-    return win
 
 
 # --- private helpers ----------------------------------------------------

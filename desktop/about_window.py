@@ -5,8 +5,7 @@ The update-check / install flow used to live in the Settings window's
 same future-polling through ``bot_loop`` when available) since checking for
 updates isn't something you do per-session the way you tweak settings.
 
-Invoked from ``main.py`` via :func:`open_about_window`, mirroring
-``settings_window.open_settings_window``.
+Invoked from ``main.py`` via :func:`open_about_window`.
 """
 
 from __future__ import annotations

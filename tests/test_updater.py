@@ -59,11 +59,11 @@ def test_about_window_takes_update_callback() -> None:
     """The update check/install flow lives in the About window now — the
     Settings window no longer knows about updates at all."""
     from desktop.about_window import AboutWindow
-    from desktop.settings_window import SettingsWindow
+    from desktop.settings_window import SettingsPanel
 
     params = inspect.signature(AboutWindow.__init__).parameters
     assert params["on_start_update"].default is None
 
     assert "on_start_update" not in inspect.signature(
-        SettingsWindow.__init__
+        SettingsPanel.__init__
     ).parameters

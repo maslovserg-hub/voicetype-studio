@@ -60,7 +60,6 @@ from desktop import single_instance
 from desktop.about_window import open_about_window
 from desktop.dictation import DictationListener
 from desktop.overlay import Overlay
-from desktop.settings_window import open_settings_window
 from desktop.transcriptor_window import TranscriptorWindow
 from desktop.tray import build_tray
 
@@ -130,7 +129,6 @@ class App:
         self.dictation.start()
 
         self._transcriptor: Optional[TranscriptorWindow] = None
-        self._settings_window = None  # CTkToplevel | None
         self._about_window = None  # CTkToplevel | None
 
         self.tray = build_tray(
@@ -209,19 +207,9 @@ class App:
         self._transcriptor.show()
 
     def _open_settings(self) -> None:
-        if self._settings_window is not None and _winfo_alive(self._settings_window):
-            self._settings_window.lift()
-            self._settings_window.focus_force()
-            return
-        # Opened from the tray or the Transcriptor's «Настройки» button —
-        # parent it to the transcriptor when it's open so the (transient)
-        # window stays on top of it instead of behind, as it did when
-        # parented to the hidden root.
-        parent = self._transcriptor
-        if parent is None or not _winfo_alive(parent):
-            parent = self.root
-        self._settings_window = open_settings_window(
-            parent,
+        # Settings is a panel inside the Transcriptor — open that first.
+        self._open_transcriptor()
+        self._transcriptor.open_settings(
             settings=self.settings,
             on_save=self._on_settings_saved,
             on_open_data_folder=self._open_data_folder,

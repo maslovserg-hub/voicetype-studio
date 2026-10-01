@@ -55,6 +55,7 @@ from ._format_dispatch import FormatResult, deliver_format
 from ._icons import apply_app_icon, as_ctk_image, make_attach_icon
 from ._message_widget import MessageWidget
 from .history_panel import HistoryPanel
+from .settings_window import SettingsPanel
 
 logger = logging.getLogger(__name__)
 
@@ -223,7 +224,6 @@ class TranscriptorWindow(ctk.CTkToplevel):
     """Chat-style window for file/URL transcriptions."""
 
     DESKTOP_USER_ID = "desktop"
-    MIN_FEED_W = 720  # fits a bubble's row of format buttons
 
     def __init__(
         self,
@@ -237,8 +237,8 @@ class TranscriptorWindow(ctk.CTkToplevel):
         super().__init__(master)
         self.title("VoiceType Studio — Транскриптор")
         apply_app_icon(self)
-        self.geometry("900x700")
         self.minsize(640, 480)
+        self._place_centered(900, 700)
 
         self.bot_loop = bot_loop
         self.asr_executor = asr_executor
@@ -247,7 +247,7 @@ class TranscriptorWindow(ctk.CTkToplevel):
         self._tasks: dict[str, TranscriptionTask] = {}
         self._event_queue: "queue.Queue[tuple]" = queue.Queue()
         self._history_open = False
-        self._grown_by = 0  # px the window widened to fit the panel
+        self._settings_panel: Optional[SettingsPanel] = None
 
         # --- toolbar: История / Настройки ---------------------------
         toolbar = ctk.CTkFrame(self, fg_color="transparent")
@@ -265,22 +265,18 @@ class TranscriptorWindow(ctk.CTkToplevel):
                 command=on_open_settings,
             ).pack(side="right")
 
-        # --- body: [history panel] + feed ---------------------------
-        # grid, not pack: CTkScrollableFrame packs an inner wrapper, so
-        # ``pack(before=self._feed)`` can't slot the panel in front of it.
-        body = ctk.CTkFrame(self, fg_color="transparent")
-        body.pack(fill="both", expand=True, padx=10, pady=(10, 0))
-        body.grid_rowconfigure(0, weight=1)
-        body.grid_columnconfigure(1, weight=1)
-
-        self._history_panel = HistoryPanel(
-            body,
-            on_open=self._open_history_row,
-        )
+        # --- body: feed, with History / Settings panels slid over it ---
+        self._body = ctk.CTkFrame(self, fg_color="transparent")
+        self._body.pack(fill="both", expand=True, padx=10, pady=(10, 0))
 
         # --- feed ----------------------------------------------------
-        self._feed = ctk.CTkScrollableFrame(body)
-        self._feed.grid(row=0, column=1, sticky="nsew")
+        self._feed = ctk.CTkScrollableFrame(self._body)
+        self._feed.pack(fill="both", expand=True)
+
+        self._history_panel = HistoryPanel(
+            self._body,
+            on_open=self._open_history_row,
+        )
 
         self._empty_hint = ctk.CTkLabel(
             self._feed,
@@ -322,37 +318,94 @@ class TranscriptorWindow(ctk.CTkToplevel):
         self.focus_force()
 
     def toggle_history(self) -> None:
-        """Show/hide the history panel, widening the window if the feed
-        would otherwise get squeezed below :attr:`MIN_FEED_W`."""
+        """Slide the history panel in from the left over the feed, or
+        back out. The window itself never resizes."""
         if self._history_open:
-            self._history_panel.grid_remove()
             self._history_open = False
-            if self._grown_by:
-                width = self._reverse_window_scaling(self.winfo_width())
-                self._resize_width(width - self._grown_by)
-                self._grown_by = 0
+            self._slide(self._history_panel, "left", show=False)
             return
-
         self._history_panel.refresh()
-        self._history_panel.grid(row=0, column=0, sticky="ns", padx=(0, 10))
         self._history_open = True
-        # winfo_* report physical px, CTk's geometry() takes logical px
-        # and applies DPI scaling itself — convert before comparing.
-        width = self._reverse_window_scaling(self.winfo_width())
-        needed = self.MIN_FEED_W + HistoryPanel.WIDTH + 40
-        if width < needed:
-            room = self._reverse_window_scaling(
-                self.winfo_screenwidth() - self.winfo_x()
-            )
-            target = min(needed, max(width, room))
-            self._grown_by = target - width
-            self._resize_width(target)
+        self._slide(self._history_panel, "left", show=True)
 
-    def _resize_width(self, width: int) -> None:
-        height = self._reverse_window_scaling(self.winfo_height())
-        self.geometry(f"{width}x{height}")
+    def open_settings(
+        self,
+        *,
+        settings: Settings,
+        on_save: Callable[[Settings], None],
+        on_open_data_folder: Optional[Callable[[], None]] = None,
+        on_clean_temp: Optional[Callable[[], None]] = None,
+    ) -> None:
+        """Slide the settings panel in from the right over the feed."""
+        if self._settings_panel is not None:
+            self._settings_panel.lift()
+            return
+        self._settings_panel = SettingsPanel(
+            self._body,
+            settings=settings,
+            on_save=on_save,
+            on_open_data_folder=on_open_data_folder,
+            on_clean_temp=on_clean_temp,
+            on_close=self._close_settings,
+        )
+        self._slide(self._settings_panel, "right", show=True)
+
+    def _close_settings(self) -> None:
+        panel, self._settings_panel = self._settings_panel, None
+        if panel is not None:
+            self._slide(panel, "right", show=False, on_done=panel.destroy)
+
+    def _slide(
+        self, panel, side: str, *, show: bool,
+        on_done: Optional[Callable[[], None]] = None, step: int = 0,
+    ) -> None:
+        """Animate ``panel`` over the full body height from/to ``side``."""
+        steps = 8
+        t = (step + 1) / steps
+        t = 1 - (1 - t) ** 3  # ease-out
+        shown = t if show else 1 - t
+        offset = round(panel.WIDTH * (1 - shown))
+        if side == "left":
+            panel.place(x=-offset, y=0, relheight=1, anchor="nw")
+        else:
+            panel.place(relx=1.0, x=offset, y=0, relheight=1, anchor="ne")
+        panel.lift()
+        if step + 1 < steps:
+            self.after(15, lambda: self._slide(
+                panel, side, show=show, on_done=on_done, step=step + 1,
+            ))
+            return
+        if not show:
+            panel.place_forget()
+        if on_done is not None:
+            on_done()
+
+    def _place_centered(self, width: int, height: int) -> None:
+        """Center the window in the work area (screen minus taskbar),
+        shrinking it if it doesn't fit. Size is logical px, position physical."""
+        left, top = 0, 0
+        right, bottom = self.winfo_screenwidth(), self.winfo_screenheight()
+        try:
+            import ctypes
+            from ctypes import wintypes
+            rect = wintypes.RECT()
+            # SPI_GETWORKAREA = 0x30
+            if ctypes.windll.user32.SystemParametersInfoW(0x30, 0, ctypes.byref(rect), 0):
+                left, top, right, bottom = rect.left, rect.top, rect.right, rect.bottom
+        except Exception:
+            pass
+        title_bar = 40  # logical px, not included in geometry() height
+        width = min(width, self._reverse_window_scaling(right - left) - 20)
+        height = min(height, self._reverse_window_scaling(bottom - top) - title_bar - 20)
+        w_px = self._apply_window_scaling(width)
+        h_px = self._apply_window_scaling(height + title_bar)
+        x = left + max(0, (right - left - w_px) // 2)
+        y = top + max(0, (bottom - top - h_px) // 2)
+        self.geometry(f"{width}x{height}+{x}+{y}")
 
     def _open_history_row(self, row: dict, segments: list[Segment]) -> None:
+        if self._history_open:
+            self.toggle_history()
         self.restore_from_history(
             source_label=row.get("label", "(история)"),
             source=row.get("source", ""),

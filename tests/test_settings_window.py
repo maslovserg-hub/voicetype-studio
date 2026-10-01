@@ -104,9 +104,9 @@ def _make_settings(**overrides):
 
 def test_settings_window_has_no_update_section(ctk_root) -> None:
     """The «Обновление» section moved to the About window entirely."""
-    from desktop.settings_window import SettingsWindow
+    from desktop.settings_window import SettingsPanel
 
-    win = SettingsWindow(
+    win = SettingsPanel(
         ctk_root, settings=_make_settings(), on_save=lambda s: None,
     )
     texts = _all_widget_texts(win)
@@ -118,12 +118,12 @@ def test_settings_window_has_no_update_section(ctk_root) -> None:
 def test_settings_window_maintenance_buttons_trigger_callbacks(ctk_root) -> None:
     """«Открыть папку с данными» / «Очистить временные файлы» fire their
     callbacks immediately — no Save/Cancel round-trip, no Save/Cancel round-trip."""
-    from desktop.settings_window import SettingsWindow
+    from desktop.settings_window import SettingsPanel
 
     opened = []
     cleaned = []
 
-    win = SettingsWindow(
+    win = SettingsPanel(
         ctk_root,
         settings=_make_settings(),
         on_save=lambda s: None,
@@ -140,12 +140,12 @@ def test_settings_window_maintenance_buttons_trigger_callbacks(ctk_root) -> None
 
 
 def test_settings_window_maintenance_clean_temp_reports_error(ctk_root) -> None:
-    from desktop.settings_window import SettingsWindow
+    from desktop.settings_window import SettingsPanel
 
     def _boom():
         raise RuntimeError("disk locked")
 
-    win = SettingsWindow(
+    win = SettingsPanel(
         ctk_root,
         settings=_make_settings(),
         on_save=lambda s: None,
@@ -158,9 +158,9 @@ def test_settings_window_maintenance_clean_temp_reports_error(ctk_root) -> None:
 
 
 def test_settings_window_has_no_telegram_section(ctk_root) -> None:
-    from desktop.settings_window import SettingsWindow
+    from desktop.settings_window import SettingsPanel
 
-    win = SettingsWindow(
+    win = SettingsPanel(
         ctk_root, settings=_make_settings(), on_save=lambda s: None,
     )
     texts = _all_widget_texts(win)
