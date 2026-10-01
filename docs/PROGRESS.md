@@ -340,3 +340,8 @@
 - Клик левой кнопкой по значку в трее открывает Транскриптор ([desktop/tray.py](../desktop/tray.py)).
 - Окна возвращают себе нашу иконку после того, как `CTkToplevel` через 200 мс ставит свою ([desktop/_icons.py](../desktop/_icons.py)).
 - 197 тестов.
+
+### Защита от трат на SpeechKit (после v1.0.9, выйдет в v1.0.10)
+
+- Перед платным вызовом SpeechKit: окно с длительностью и ценой, если оценка > 5 ₽; запись длиннее 30 минут не отправляется ([desktop/transcriptor_window.py](../desktop/transcriptor_window.py), [core/speechkit.py](../core/speechkit.py)).
+- Файловый лог `data/logs/app.log`: все вызовы SpeechKit и LLM ([main.py](../main.py), [core/summarizer.py](../core/summarizer.py)).
