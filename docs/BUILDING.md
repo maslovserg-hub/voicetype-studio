@@ -62,29 +62,34 @@ dist/
 ## Релиз
 
 ```powershell
-# 1. Запаковать dist/VoiceTypeStudio в zip
-# ВАЖНО: -Path dist\VoiceTypeStudio\* (со звёздочкой!), а не dist\VoiceTypeStudio.
-# Без звёздочки Compress-Archive кладёт саму папку VoiceTypeStudio\ как
-# top-level entry в архиве -> при распаковке в INSTALL_DIR получается
-# двойная вложенность VoiceTypeStudio\VoiceTypeStudio\VoiceTypeStudio.exe,
-# а launcher.py ждёт плоский EXE_PATH = INSTALL_DIR\VoiceTypeStudio.exe.
-# Это уже ловили один раз (см. docs/PROGRESS.md, "Flat install layout") и
-# регрессировало в релизе v1.0.1 из-за этой самой команды без звёздочки.
-Compress-Archive -Path dist\VoiceTypeStudio\* -DestinationPath VoiceTypeStudio_release.zip
-
-# 2. Создать тэг и push
-git tag v1.0.0
-git push origin v1.0.0
-
-# 3. На GitHub: создать Release из тэга, прикрепить артефакты:
-#    - VoiceTypeStudio_release.zip  (полный билд)
-#    - dist/launcher/VoiceTypeStudio-Setup.exe  (то что распространяем)
+# 1. Запаковать dist\VoiceTypeStudio (плоско, без папки верхнего уровня)
+python tools\make_release.py
 ```
 
-После создания release нужно отредактировать `launcher/launcher.py`:
-- `APP_URL` — указать на release-asset URL вида
-  `https://github.com/<user>/voicetype-studio/releases/download/v1.0.0/VoiceTypeStudio_release.zip`
-- Пересобрать launcher.
+Скрипт кладёт в корень репо:
+- `VoiceTypeStudio_release.zip` — полная установка (~220 МБ);
+- `VoiceTypeStudio_update.zip` — только exe, `base_library.zip` и
+  `Update.bat` (~50 МБ);
+- `deps.txt` — отпечаток остальных файлов `_internal` (torch и прочие
+  библиотеки). Он же лежит внутри обоих zip.
+
+`VoiceTypeStudio-Update.bat` (и кнопка «Обновить») скачивает `deps.txt`
+последнего релиза и сравнивает с установленным: совпал — качает
+маленький zip, нет — полный. Поэтому в каждый релиз выкладывать **все
+три файла**, даже если библиотеки менялись.
+
+```powershell
+# 2. Тег, пуш, релиз
+git tag v1.0.9
+git push origin main v1.0.9
+gh release create v1.0.9 --title v1.0.9 --notes-file notes.md `
+  VoiceTypeStudio_release.zip VoiceTypeStudio_update.zip deps.txt `
+  tools\VoiceTypeStudio-Update.bat dist_release\VoiceTypeStudio-Setup.exe
+```
+
+Launcher (`VoiceTypeStudio-Setup.exe`) качает
+`releases/latest/download/VoiceTypeStudio_release.zip` — пересобирать его
+нужно только когда меняется сам `launcher/launcher.py`.
 
 ## Размер итогового exe
 

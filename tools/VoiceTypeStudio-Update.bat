@@ -16,7 +16,11 @@ set "CURL=%SYS%\curl.exe"
 set "DIR=%APPDATA%\VoiceTypeStudio"
 rem ASCII-only path: tar mangles Cyrillic in arguments (C:\Users\Сергей\...).
 set "ZIP=%SystemDrive%\ProgramData\VoiceTypeStudio_update.zip"
+set "DEPS=%SystemDrive%\ProgramData\VoiceTypeStudio_deps.txt"
 set "URL=https://github.com/maslovserg-hub/voicetype-studio/releases/latest/download/VoiceTypeStudio_release.zip"
+set "SMALL_URL=https://github.com/maslovserg-hub/voicetype-studio/releases/latest/download/VoiceTypeStudio_update.zip"
+set "DEPS_URL=https://github.com/maslovserg-hub/voicetype-studio/releases/latest/download/deps.txt"
+set "SIZE=примерно 220 МБ"
 
 echo.
 echo   Обновление VoiceType Studio
@@ -45,7 +49,19 @@ echo   Закрываю программу...
 "%SYS%\taskkill.exe" /F /IM VoiceTypeStudio.exe >nul 2>&1
 "%SYS%\ping.exe" -n 3 127.0.0.1 >nul
 
-echo   Скачиваю новую версию, примерно 220 МБ...
+rem deps.txt fingerprints the libraries in _internal. If the new release
+rem has the same ones as this install, only the small zip (exe + what
+rem changes with it) is needed, not the full 220 MB.
+"%CURL%" -L --fail -s -o "%DEPS%" "%DEPS_URL%"
+if not errorlevel 1 if exist "%DIR%\deps.txt" (
+    "%SYS%\fc.exe" /b "%DEPS%" "%DIR%\deps.txt" >nul 2>&1 && (
+        set "URL=%SMALL_URL%"
+        set "SIZE=примерно 50 МБ"
+    )
+)
+del "%DEPS%" >nul 2>&1
+
+echo   Скачиваю новую версию, %SIZE%...
 echo.
 "%CURL%" -L --fail --retry 2 -o "%ZIP%" "%URL%"
 if errorlevel 1 (

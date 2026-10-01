@@ -30,6 +30,8 @@ build.log
 
 # Local release artefact — published via gh release, not git
 VoiceTypeStudio_release.zip
+VoiceTypeStudio_update.zip
+/deps.txt
 
 # User-provided icon source bundle — extracted into assets/ already
 _icon_pkg/

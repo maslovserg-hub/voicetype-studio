@@ -44,7 +44,7 @@ def test_update_script_shipped_and_sane() -> None:
     # "is it still running?" check always answer "no" — the unpack then
     # started while the exe was still locked and half-replaced the install.
     assert 'set "SYS=%SystemRoot%\\System32"' in text
-    for tool in ("tar.exe", "curl.exe", "taskkill.exe", "ping.exe"):
+    for tool in ("tar.exe", "curl.exe", "taskkill.exe", "ping.exe", "fc.exe"):
         assert "%SYS%\\" + tool in text
     for bare in ("\nfind ", "\ntaskkill ", "\ntimeout "):
         assert bare not in text
@@ -67,3 +67,35 @@ def test_about_window_takes_update_callback() -> None:
     assert "on_start_update" not in inspect.signature(
         SettingsPanel.__init__
     ).parameters
+
+
+def test_update_script_picks_small_zip_by_deps_fingerprint() -> None:
+    text = (Path("tools") / updater.SCRIPT_NAME).read_text(encoding="cp866")
+    assert "releases/latest/download/VoiceTypeStudio_update.zip" in text
+    assert "releases/latest/download/deps.txt" in text
+    assert r'"%DIR%\deps.txt"' in text
+
+
+def test_deps_fingerprint_ignores_app_files(tmp_path) -> None:
+    """Rebuilding the app code (exe, base_library, the .bat) must not
+    change the fingerprint; touching a library must."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "make_release", Path("tools") / "make_release.py",
+    )
+    mr = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mr)
+
+    for rel in (*mr.APP_FILES, "_internal/torch/lib/x.dll"):
+        (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / rel).write_bytes(b"v1")
+    before = mr.deps_fingerprint(tmp_path)
+
+    for rel in mr.APP_FILES:
+        (tmp_path / rel).write_bytes(b"v2")
+    (tmp_path / mr.DEPS_NAME).write_text("old")
+    assert mr.deps_fingerprint(tmp_path) == before
+
+    (tmp_path / "_internal/torch/lib/x.dll").write_bytes(b"v2")
+    assert mr.deps_fingerprint(tmp_path) != before
