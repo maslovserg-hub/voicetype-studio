@@ -33,6 +33,7 @@ import queue
 import re
 import sys
 import uuid
+from concurrent.futures import Future
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Literal, Optional
@@ -631,6 +632,8 @@ class TranscriptorWindow(ctk.CTkToplevel):
                     ))
 
                 if use_speechkit:
+                    await _confirm_speechkit(self, task, Path(wav_path))
+
                     def sk_cb(status: str, _tid=task.task_id) -> None:
                         self._post(("progress", _tid, status, 50))
 
@@ -762,6 +765,16 @@ class TranscriptorWindow(ctk.CTkToplevel):
             if task and task.widget and task.status != "stopped":
                 task.widget.set_progress(status_text, percent)
                 task.progress = percent
+        elif kind == "confirm_paid":
+            _, _task_id, text, answer = event
+            from tkinter import messagebox
+
+            answer.set_result(messagebox.askyesno(
+                "Платная расшифровка",
+                f"{text}\n\nЯндекс SpeechKit списывает деньги за каждую секунду "
+                "аудио. Отправить запись?",
+                parent=self,
+            ))
         elif kind == "done":
             _, task_id, segments = event
             task = self._tasks.get(task_id)
@@ -897,6 +910,49 @@ def download_target(settings: Settings) -> tuple[Path, bool]:
     if path.is_dir():
         return path, False
     return _downloads_dir(), True
+
+
+# Below this estimate (≈ 8 min of audio) SpeechKit runs without asking.
+SPEECHKIT_CONFIRM_RUB = 5.0
+# Hard cap: longer recordings are never sent to SpeechKit.
+SPEECHKIT_MAX_S = 30 * 60
+
+
+async def _confirm_speechkit(win, task: TranscriptionTask, wav_path: Path) -> None:
+    """Show length and estimated price before the paid SpeechKit call.
+
+    Over ``SPEECHKIT_MAX_S`` it refuses outright (``RuntimeError``).
+    Runs in the asyncio thread; the dialog lives in the GUI thread, so the
+    answer comes back through a ``concurrent.futures.Future``. A "no" raises
+    ``CancelledError`` — same path as ⏹ Стоп.
+    """
+    duration = speechkit.wav_duration_s(wav_path)
+    cost = speechkit.estimate_cost_rub(duration) if duration is not None else None
+    logger.info(
+        "speechkit about to run: task=%s source=%s audio_sec=%s est_rub=%s",
+        task.task_id, task.source,
+        f"{duration:.0f}" if duration is not None else "unknown",
+        f"{cost:.2f}" if cost is not None else "unknown",
+    )
+    if duration is not None and duration > SPEECHKIT_MAX_S:
+        logger.warning("speechkit BLOCKED task=%s: %.0f s > limit", task.task_id, duration)
+        raise RuntimeError(
+            f"Запись длиннее {SPEECHKIT_MAX_S // 60} минут "
+            f"({int(duration) // 60} мин) — в Яндекс не отправляю, это дорого."
+        )
+    if cost is not None and cost < SPEECHKIT_CONFIRM_RUB:
+        return
+    if duration is None:
+        text = "Не удалось узнать длительность записи."
+    else:
+        h, rem = divmod(int(duration), 3600)
+        text = f"Запись: {h} ч {rem // 60} мин. Примерная цена ≈ {cost:.0f} ₽."
+    answer: Future = Future()
+    win._post(("confirm_paid", task.task_id, text, answer))
+    ok = await asyncio.wrap_future(answer)
+    logger.info("speechkit confirm task=%s answer=%s", task.task_id, "yes" if ok else "NO")
+    if not ok:
+        raise asyncio.CancelledError()
 
 
 def _looks_like_url(value: str) -> bool:

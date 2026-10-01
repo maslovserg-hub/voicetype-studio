@@ -155,6 +155,7 @@ def test_stop_cancels_pipeline_and_cleans_temp(tmp_path, monkeypatch) -> None:
 
     monkeypatch.setattr(tw.AudioConverter, "to_wav", fake_to_wav)
     monkeypatch.setattr(tw.speechkit, "transcribe", hang)
+    monkeypatch.setattr(tw.speechkit, "wav_duration_s", lambda _p: 60.0)  # cheap → no dialog
 
     events: list[tuple] = []
     win = SimpleNamespace(
@@ -180,3 +181,47 @@ def test_stop_cancels_pipeline_and_cleans_temp(tmp_path, monkeypatch) -> None:
     assert not any(e[0] == "error" for e in events)
     assert not wav.exists()
     assert src.exists()  # the user's own file is never touched
+
+
+def test_speechkit_confirm_asks_when_expensive_and_no_cancels(tmp_path, monkeypatch) -> None:
+    import asyncio
+
+    import desktop.transcriptor_window as tw
+
+    monkeypatch.setattr(tw.speechkit, "wav_duration_s", lambda _p: 1500.0)
+    events: list[tuple] = []
+
+    def post(ev):
+        events.append(ev)
+        ev[3].set_result(False)  # user clicks "No"
+
+    win = type("W", (), {"_post": staticmethod(post)})()
+    task = tw.TranscriptionTask(task_id="t2", source_label="x", source="a.mp4", lang="other")
+
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(tw._confirm_speechkit(win, task, tmp_path / "a.wav"))
+    assert events[0][0] == "confirm_paid"
+    assert "0 ч 25 мин" in events[0][2]
+
+
+def test_speechkit_confirm_skips_cheap(tmp_path, monkeypatch) -> None:
+    import asyncio
+
+    import desktop.transcriptor_window as tw
+
+    monkeypatch.setattr(tw.speechkit, "wav_duration_s", lambda _p: 120.0)
+    win = type("W", (), {"_post": staticmethod(lambda ev: pytest.fail("no dialog"))})()
+    task = tw.TranscriptionTask(task_id="t3", source_label="x", source="a.mp4", lang="other")
+    asyncio.run(tw._confirm_speechkit(win, task, tmp_path / "a.wav"))
+
+
+def test_speechkit_blocks_over_30_minutes(tmp_path, monkeypatch) -> None:
+    import asyncio
+
+    import desktop.transcriptor_window as tw
+
+    monkeypatch.setattr(tw.speechkit, "wav_duration_s", lambda _p: 1801.0)
+    win = type("W", (), {"_post": staticmethod(lambda ev: pytest.fail("no dialog"))})()
+    task = tw.TranscriptionTask(task_id="t4", source_label="x", source="a.mp4", lang="other")
+    with pytest.raises(RuntimeError, match="30 минут"):
+        asyncio.run(tw._confirm_speechkit(win, task, tmp_path / "a.wav"))

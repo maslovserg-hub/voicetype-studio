@@ -19,6 +19,7 @@ import json
 import logging
 import time
 import uuid
+import wave
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -39,6 +40,23 @@ MAX_INLINE_BYTES = 60 * 1024 * 1024
 POLL_INTERVAL_S = 3
 MAX_WAIT_S = 60 * 60
 
+# Calibrated on a real invoice: 13 046 s of audio → 131,76 ₽ (≈ 36 ₽/hour).
+# An estimate for the warning dialog, not a price list — check the tariff.
+RUB_PER_SECOND = 131.76 / 13046
+
+
+def wav_duration_s(path: Path) -> Optional[float]:
+    """Length of a PCM WAV in seconds, ``None`` if it can't be read."""
+    try:
+        with wave.open(str(path), "rb") as w:
+            return w.getnframes() / w.getframerate()
+    except Exception:
+        return None
+
+
+def estimate_cost_rub(seconds: float) -> float:
+    return seconds * RUB_PER_SECOND
+
 
 async def transcribe(
     audio_path: Path,
@@ -53,6 +71,7 @@ async def transcribe(
             "добавьте его в Настройках."
         )
 
+    duration = wav_duration_s(audio_path)
     ogg_path = config.temp_dir / f"speechkit_{uuid.uuid4().hex[:10]}.ogg"
     try:
         await _to_ogg_opus(audio_path, ogg_path)
@@ -64,6 +83,13 @@ async def transcribe(
             "Запись слишком длинная для SpeechKit (больше ~3 часов)."
         )
 
+    logger.info(
+        "speechkit PAID request: file=%s audio_sec=%s est_rub=%s ogg_kb=%d",
+        audio_path.name,
+        f"{duration:.0f}" if duration is not None else "unknown",
+        f"{estimate_cost_rub(duration):.2f}" if duration is not None else "unknown",
+        len(audio) // 1024,
+    )
     headers = {"Authorization": f"Api-Key {api_key}"}
     payload = {
         "content": base64.b64encode(audio).decode("ascii"),
@@ -89,11 +115,16 @@ async def transcribe(
                 logger.error("speechkit recognize %s: %s", resp.status, body[:500])
                 raise RuntimeError(f"SpeechKit вернул {resp.status}: {body[:200]}")
         op_id = json.loads(body)["id"]
-        logger.info("speechkit operation %s (%d KB audio)", op_id, len(audio) // 1024)
+        logger.info("speechkit operation %s accepted (%d KB audio)", op_id, len(audio) // 1024)
 
+        started = time.monotonic()
         try:
             await _poll(session, headers, op_id, status_callback)
         except asyncio.CancelledError:
+            logger.warning(
+                "speechkit operation %s CANCELLED by user after %ds — may still be billed",
+                op_id, time.monotonic() - started,
+            )
             # ⏹ Стоп: ask Yandex to drop the job. Best effort — the
             # operation may not support cancelling, and we don't wait long.
             try:
@@ -110,7 +141,12 @@ async def transcribe(
                 logger.error("speechkit result %s: %s", resp.status, body[:500])
                 raise RuntimeError(f"SpeechKit вернул {resp.status}: {body[:200]}")
 
-    return parse_recognition(body)
+    segments = parse_recognition(body)
+    logger.info(
+        "speechkit operation %s done in %ds, %d segments",
+        op_id, time.monotonic() - started, len(segments),
+    )
+    return segments
 
 
 async def _poll(session, headers, op_id, status_callback) -> None:
@@ -126,6 +162,7 @@ async def _poll(session, headers, op_id, status_callback) -> None:
         ) as resp:
             op = await resp.json(content_type=None)
         if op.get("error"):
+            logger.error("speechkit operation %s failed: %s", op_id, op["error"])
             raise RuntimeError(f"SpeechKit: {op['error'].get('message', op['error'])}")
         if op.get("done"):
             return

@@ -49,6 +49,7 @@ if sys.platform == "win32":
 import asyncio
 import logging
 import threading
+from logging.handlers import RotatingFileHandler
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
 
@@ -355,9 +356,20 @@ def _winfo_alive(widget) -> bool:
 
 
 def main() -> None:
+    # Console is invisible in the packaged app — keep a rotating file log so
+    # paid calls (SpeechKit, LLM) can be audited afterwards.
+    config.ensure_dirs()
+    log_dir = config.data_dir / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        handlers=[
+            logging.StreamHandler(),
+            RotatingFileHandler(
+                log_dir / "app.log", maxBytes=2_000_000, backupCount=3, encoding="utf-8",
+            ),
+        ],
     )
     if not single_instance.acquire():
         single_instance.show_already_running_dialog()

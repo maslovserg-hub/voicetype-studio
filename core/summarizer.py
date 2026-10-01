@@ -61,7 +61,15 @@ class Summarizer:
             )
             return cached
 
+        logger.info(
+            "LLM PAID request %s/%s mode=%s chars=%d",
+            provider.name, chosen_model, mode.value, len(transcript),
+        )
         result = await provider.process(mode, transcript, model=chosen_model)
+        logger.info(
+            "LLM done %s/%s mode=%s result_chars=%d",
+            provider.name, chosen_model, mode.value, len(result),
+        )
         _cache[key] = result
         while len(_cache) > _CACHE_LIMIT:
             _cache.popitem(last=False)
