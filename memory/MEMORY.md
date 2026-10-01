@@ -6,3 +6,4 @@
 - [Session state 2026-09-24](project_session_2026-09-24.md) — v1.0.5: язык «Другой» (субтитры YouTube → Yandex SpeechKit), кнопка «Перевод»; Gemini из РФ заблокирован, пунктуация SpeechKit только для русского
 - [Session state 2026-09-25](project_session_2026-09-25.md) — v1.0.6–1.0.7: кнопка «⏹ Стоп» обрывает закачку/ffmpeg/SpeechKit; reload(main) ломал Popen в тестах; отвечать только по-русски
 - [Session state 2026-09-27](project_session_2026-09-27.md) — v1.0.8: удалены Telegram-бот, озвучка и ручной cookies.txt; клик по трею открывает Транскриптор; белый листок на панели задач = битый 8.3-путь иконки в ярлыке «Пуска»
+- [Session state 2026-10-01](project_session_2026-10-01.md) — v1.0.9: окно по центру, История/Настройки выезжающими панелями, маленькое обновление ~50 МБ по deps.txt; Update.bat в CP866 — перед релизом git fetch
