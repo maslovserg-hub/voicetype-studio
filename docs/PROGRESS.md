@@ -341,7 +341,12 @@
 - Окна возвращают себе нашу иконку после того, как `CTkToplevel` через 200 мс ставит свою ([desktop/_icons.py](../desktop/_icons.py)).
 - 197 тестов.
 
-### Защита от трат на SpeechKit (после v1.0.9, выйдет в v1.0.10)
+### Защита от трат на SpeechKit (v1.0.10)
 
 - Перед платным вызовом SpeechKit: окно с длительностью и ценой, если оценка > 5 ₽; запись длиннее 30 минут не отправляется ([desktop/transcriptor_window.py](../desktop/transcriptor_window.py), [core/speechkit.py](../core/speechkit.py)).
 - Файловый лог `data/logs/app.log`: все вызовы SpeechKit и LLM ([main.py](../main.py), [core/summarizer.py](../core/summarizer.py)).
+
+### Диктовка без «э-э-э» (v1.0.10)
+
+- `clean_dictation_text` убирает звуки-заминки: «э», «э-э-э», «эм», «мм», «м-м», «а-а» вместе с приклеенной пунктуацией; после заминки в начале предложения следующее слово с большой буквы ([desktop/dictation.py](../desktop/dictation.py)). Одиночное «а», «ну», «вот» не трогаются. Транскриптор не фильтруется.
+- 204 теста.
