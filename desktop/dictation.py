@@ -59,6 +59,21 @@ _EN_SHORT = {
     "in", "on", "at", "to", "for", "lol", "omg", "bye",
 }
 
+# Hesitation sounds ("э-э-э", "эм", "мм", "а-а") plus the punctuation GigaAM
+# glues to them. A lone "а" is a real conjunction, so "а" needs a hyphen.
+_HESITATION = re.compile(
+    r"(?<!\w)(?:э+(?:-+э*)*м*|м{2,}|м(?:-+м+)+|а(?:-+а*)+)(?!\w)[.,!?…-]*",
+    re.IGNORECASE,
+)
+
+
+def _drop_hesitation(m: "re.Match[str]") -> str:
+    # Keep the sentence end if the filler was the last word; mark a
+    # sentence-initial filler with \0 so the next word gets capitalised.
+    if not m.string[m.end():].strip():
+        return re.sub(r"[^.!?…]", "", m.group())
+    return "\0" if m.group()[0].isupper() else ""
+
 
 def clean_dictation_text(text: str) -> str:
     """Filter ASR noise: stray Latin tokens and ghost ``ы``."""
@@ -73,6 +88,9 @@ def clean_dictation_text(text: str) -> str:
 
     text = re.sub(r"[a-zA-Z]+", _filter_latin, text).strip()
     text = _NOISE_Y.sub("", text).strip()
+    text = _HESITATION.sub(_drop_hesitation, text)
+    text = re.sub(r"\0\s*(\w?)", lambda m: m.group(1).upper(), text)
+    text = re.sub(r"\s+(?=[.,!?…])", "", text)
     text = re.sub(r" {2,}", " ", text)
     return text.strip()
 

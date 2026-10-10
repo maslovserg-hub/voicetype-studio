@@ -247,3 +247,20 @@ def test_dictation_open_mic_stream_swallows_failure() -> None:
         else:
             sys.modules.pop("sounddevice", None)
     assert listener._mic_stream is None
+
+
+def test_clean_dictation_text_drops_hesitations() -> None:
+    from desktop.dictation import clean_dictation_text
+
+    assert clean_dictation_text(
+        "Так, послушай меня. Э-э-э, как сделать так? Чтобы много всяких, "
+        "получается, э-э-. вот этих вот."
+    ) == (
+        "Так, послушай меня. Как сделать так? Чтобы много всяких, "
+        "получается, вот этих вот."
+    )
+    assert clean_dictation_text("ну ээ давай мм сделаем эм это") == "ну давай сделаем это"
+    assert clean_dictation_text("Фильтр по э.") == "Фильтр по."
+    assert clean_dictation_text("а-а-а, понял") == "понял"
+    # Real words that merely start with these letters survive.
+    assert clean_dictation_text("а это эхо, мама") == "а это эхо, мама"
