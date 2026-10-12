@@ -63,3 +63,24 @@ def test_main_subprocess_patch_idempotent() -> None:
     # still in scope.
     assert callable(subprocess.Popen.__init__)
 
+
+
+@pytest.mark.parametrize("warm_up_done, exits", [(False, True), (True, False)])
+def test_shutdown_skips_waiting_for_running_warm_up(warm_up_done, exits) -> None:
+    """A warm-up still loading GigaAM must not hold the process open after
+    quit; once it's finished, shutdown exits normally."""
+    from concurrent.futures import ThreadPoolExecutor
+    from unittest.mock import MagicMock, patch
+
+    import main
+
+    app = main.App.__new__(main.App)
+    for name in ("dictation", "tray", "bot_loop", "_bot_thread", "overlay", "root"):
+        setattr(app, name, MagicMock())
+    app.asr_executor = ThreadPoolExecutor(max_workers=1)
+    app._warm_up = MagicMock(done=MagicMock(return_value=warm_up_done))
+
+    with patch.object(main.os, "_exit") as fake_exit:
+        app.shutdown()
+
+    assert fake_exit.called is exits

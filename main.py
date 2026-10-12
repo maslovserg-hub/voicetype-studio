@@ -48,6 +48,7 @@ if sys.platform == "win32":
 
 import asyncio
 import logging
+import os
 import threading
 import time
 from logging.handlers import RotatingFileHandler
@@ -117,7 +118,7 @@ class App:
         # Load GigaAM now rather than on the first dictation, which otherwise
         # waits 20-30 s after a reboot. Same executor, so an early dictation
         # just queues behind the warm-up.
-        self.asr_executor.submit(self._warm_up_asr)
+        self._warm_up = self.asr_executor.submit(self._warm_up_asr)
 
         # --- asyncio loop on a daemon thread ---------------------------
         self.bot_loop: asyncio.AbstractEventLoop = asyncio.new_event_loop()
@@ -360,6 +361,13 @@ class App:
             pass
 
         logger.info("Shutdown complete")
+
+        # 5. The executor's worker isn't a daemon, so Python would wait for
+        # a running warm-up (up to ~30 s) before exiting. Nothing else is
+        # in it — queued calls were cancelled above — so don't wait.
+        if not self._warm_up.done():
+            logging.shutdown()
+            os._exit(0)
 
 
 # --- helpers ---------------------------------------------------------------
