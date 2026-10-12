@@ -118,6 +118,10 @@ class App:
         # Load GigaAM now rather than on the first dictation, which otherwise
         # waits 20-30 s after a reboot. Same executor, so an early dictation
         # just queues behind the warm-up.
+        self._model_cached = (
+            config.gigaam_cache_dir / f"{config.gigaam_model}.ckpt"
+        ).is_file()
+        self._quitting = False
         self._warm_up = self.asr_executor.submit(self._warm_up_asr)
 
         # --- asyncio loop on a daemon thread ---------------------------
@@ -306,6 +310,7 @@ class App:
         logger.info("Freed %.1f MB from %s", bytes_freed / 1024 / 1024, tmp)
 
     def _quit(self) -> None:
+        self._quitting = True
         # Tearing the root down here triggers the ``finally`` in ``run``.
         try:
             self.root.quit()
@@ -364,8 +369,12 @@ class App:
 
         # 5. The executor's worker isn't a daemon, so Python would wait for
         # a running warm-up (up to ~30 s) before exiting. Nothing else is
-        # in it — queued calls were cancelled above — so don't wait.
-        if not self._warm_up.done():
+        # in it — queued calls were cancelled above — so don't wait. Only
+        # on a normal quit (a crash must still surface) and only with the
+        # model already cached: gigaam downloads straight into the final
+        # .ckpt, and killing that leaves a truncated file that fails the
+        # checksum on every later launch.
+        if self._quitting and self._model_cached and not self._warm_up.done():
             logging.shutdown()
             os._exit(0)
 

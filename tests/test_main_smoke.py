@@ -64,11 +64,22 @@ def test_main_subprocess_patch_idempotent() -> None:
     assert callable(subprocess.Popen.__init__)
 
 
-
-@pytest.mark.parametrize("warm_up_done, exits", [(False, True), (True, False)])
-def test_shutdown_skips_waiting_for_running_warm_up(warm_up_done, exits) -> None:
-    """A warm-up still loading GigaAM must not hold the process open after
-    quit; once it's finished, shutdown exits normally."""
+@pytest.mark.parametrize(
+    "warm_up_done, quitting, model_cached, exits",
+    [
+        (False, True, True, True),
+        (True, True, True, False),
+        # a crash, not a quit — let the exception surface
+        (False, False, True, False),
+        # warm-up may be downloading the model — killing it truncates the .ckpt
+        (False, True, False, False),
+    ],
+)
+def test_shutdown_skips_waiting_for_running_warm_up(
+    warm_up_done, quitting, model_cached, exits,
+) -> None:
+    """A warm-up still running on an already-cached model must not hold
+    the process open after quit; otherwise shutdown exits normally."""
     from concurrent.futures import ThreadPoolExecutor
     from unittest.mock import MagicMock, patch
 
@@ -79,8 +90,10 @@ def test_shutdown_skips_waiting_for_running_warm_up(warm_up_done, exits) -> None
         setattr(app, name, MagicMock())
     app.asr_executor = ThreadPoolExecutor(max_workers=1)
     app._warm_up = MagicMock(done=MagicMock(return_value=warm_up_done))
+    app._quitting = quitting
+    app._model_cached = model_cached
 
-    with patch.object(main.os, "_exit") as fake_exit:
+    with patch.object(main.os, "_exit") as fake_exit,             patch.object(main.logging, "shutdown"):
         app.shutdown()
 
     assert fake_exit.called is exits
