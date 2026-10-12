@@ -9,4 +9,4 @@
 - [Session state 2026-10-01](project_session_2026-10-01.md) — v1.0.9: окно по центру, История/Настройки выезжающими панелями, маленькое обновление ~50 МБ по deps.txt; Update.bat в CP866 — перед релизом git fetch
 - [SpeechKit cost guard 2026-10-01](project_session_2026-10-01.md) — предупреждение о цене + лимит 30 мин + app.log закоммичены (1633042), но НЕ в релизе: войдут в следующую сборку v1.0.10
 - [Session state 2026-10-10](project_session_2026-10-10.md) — v1.0.10: диктовка выкидывает «э-э-э/эм/мм/а-а» (ну/вот не трогаем); SpeechKit-защита в релизе
-- [Next release backlog](project_next_release_backlog.md) — в 1.0.11: новое окно «О программе» (e2a2def); открыто — Update.bat висит на обрыве (curl без speed-limit)
+- [Next release backlog](project_next_release_backlog.md) — в 1.0.11: новое окно «О программе» (e2a2def), прогрев GigaAM при старте; открыто — Update.bat висит на обрыве (curl без speed-limit)

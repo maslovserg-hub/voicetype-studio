@@ -49,6 +49,7 @@ if sys.platform == "win32":
 import asyncio
 import logging
 import threading
+import time
 from logging.handlers import RotatingFileHandler
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
@@ -113,6 +114,10 @@ class App:
         # Route every async call into Transcriber through this same executor
         # — guarantees serial GigaAM access from dictation + window.
         Transcriber.set_executor(self.asr_executor)
+        # Load GigaAM now rather than on the first dictation, which otherwise
+        # waits 20-30 s after a reboot. Same executor, so an early dictation
+        # just queues behind the warm-up.
+        self.asr_executor.submit(self._warm_up_asr)
 
         # --- asyncio loop on a daemon thread ---------------------------
         self.bot_loop: asyncio.AbstractEventLoop = asyncio.new_event_loop()
@@ -167,6 +172,20 @@ class App:
                 pass
 
     # ----- transcribe path used by dictation ---------------------------
+
+    @staticmethod
+    def _warm_up_asr() -> None:
+        """Load the model and run half a second of silence through it —
+        the first pass through torch is slow too."""
+        import numpy as np
+
+        started = time.monotonic()
+        try:
+            Transcriber.transcribe_array(np.zeros(8000, dtype=np.float32), 16000)
+        except Exception:
+            logger.exception("ASR warm-up failed")
+            return
+        logger.info("ASR warmed up in %.1f s", time.monotonic() - started)
 
     def _transcribe_for_dictation(self, audio, sample_rate: int) -> str:
         """Sync wrapper. Routes through ``asr_executor`` so the GigaAM
