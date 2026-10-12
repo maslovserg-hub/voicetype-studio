@@ -93,7 +93,10 @@ def test_shutdown_skips_waiting_for_running_warm_up(
     app._quitting = quitting
     app._model_cached = model_cached
 
-    with patch.object(main.os, "_exit") as fake_exit,             patch.object(main.logging, "shutdown"):
+    with (
+        patch.object(main.os, "_exit") as fake_exit,
+        patch.object(main.logging, "shutdown"),
+    ):
         app.shutdown()
 
     assert fake_exit.called is exits

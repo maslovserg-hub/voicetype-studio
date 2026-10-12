@@ -118,9 +118,10 @@ class App:
         # Load GigaAM now rather than on the first dictation, which otherwise
         # waits 20-30 s after a reboot. Same executor, so an early dictation
         # just queues behind the warm-up.
-        self._model_cached = (
-            config.gigaam_cache_dir / f"{config.gigaam_model}.ckpt"
-        ).is_file()
+        self._model_cached = all(
+            (config.gigaam_cache_dir / f"{config.gigaam_model}{suffix}").is_file()
+            for suffix in (".ckpt", "_tokenizer.model")
+        )
         self._quitting = False
         self._warm_up = self.asr_executor.submit(self._warm_up_asr)
 
