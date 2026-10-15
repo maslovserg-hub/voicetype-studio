@@ -46,8 +46,8 @@ class AboutWindow(ctk.CTkToplevel):
         super().__init__(master)
         self.title("VoiceType Studio — О программе")
         apply_app_icon(self)
-        self.geometry("480x360")
-        self.minsize(420, 320)
+        self.geometry("480x420")
+        self.minsize(420, 380)
         self.resizable(False, False)
         self.transient(master)
 
@@ -77,18 +77,18 @@ class AboutWindow(ctk.CTkToplevel):
             body, text=f"Автор: {AUTHOR}", anchor="w",
         ).pack(fill="x", pady=(16, 0))
 
-        update_row = ctk.CTkFrame(body, fg_color="transparent")
-        update_row.pack(fill="x", pady=(16, 0))
         self._check_update_btn = ctk.CTkButton(
-            update_row, text="Проверить обновления", width=180,
+            body, text="Проверить обновления", width=180,
             command=self._on_check_updates,
         )
-        self._check_update_btn.pack(side="left")
-        self._update_status = ctk.CTkLabel(update_row, text="", anchor="w")
-        self._update_status.pack(side="left", padx=(8, 0), fill="x", expand=True)
+        self._check_update_btn.pack(anchor="w", pady=(16, 0))
+        self._update_status = ctk.CTkLabel(
+            body, text="", anchor="w", justify="left", wraplength=440,
+        )
+        self._update_status.pack(fill="x", pady=(8, 0))
 
         self._install_update_btn = ctk.CTkButton(
-            body, text="", command=self._on_install_update,
+            body, text="", width=180, command=self._on_install_update,
         )  # packed only once a newer version is found
 
         footer = ctk.CTkFrame(self, fg_color="transparent")
@@ -144,12 +144,13 @@ class AboutWindow(ctk.CTkToplevel):
         self._update_status.configure(
             text=(
                 f"Доступна версия {payload}. Программа закроется, скачает "
-                "около 220 МБ и запустится снова."
+                "от 50 до 220 МБ (зависит от того, менялись ли библиотеки) "
+                "и запустится снова."
             ),
             text_color="#3ea55a",
         )
         self._install_update_btn.configure(text=f"Обновить до {payload}")
-        self._install_update_btn.pack(fill="x", padx=16, pady=(0, 8))
+        self._install_update_btn.pack(anchor="w", pady=(8, 0))
 
     def _on_install_update(self) -> None:
         if not updater.start_update():

@@ -48,7 +48,9 @@ if sys.platform == "win32":
 
 import asyncio
 import logging
+import os
 import threading
+import time
 from logging.handlers import RotatingFileHandler
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
@@ -113,6 +115,15 @@ class App:
         # Route every async call into Transcriber through this same executor
         # — guarantees serial GigaAM access from dictation + window.
         Transcriber.set_executor(self.asr_executor)
+        # Load GigaAM now rather than on the first dictation, which otherwise
+        # waits 20-30 s after a reboot. Same executor, so an early dictation
+        # just queues behind the warm-up.
+        self._model_cached = all(
+            (config.gigaam_cache_dir / f"{config.gigaam_model}{suffix}").is_file()
+            for suffix in (".ckpt", "_tokenizer.model")
+        )
+        self._quitting = False
+        self._warm_up = self.asr_executor.submit(self._warm_up_asr)
 
         # --- asyncio loop on a daemon thread ---------------------------
         self.bot_loop: asyncio.AbstractEventLoop = asyncio.new_event_loop()
@@ -169,6 +180,20 @@ class App:
                 pass
 
     # ----- transcribe path used by dictation ---------------------------
+
+    @staticmethod
+    def _warm_up_asr() -> None:
+        """Load the model and run half a second of silence through it —
+        the first pass through torch is slow too."""
+        import numpy as np
+
+        started = time.monotonic()
+        try:
+            Transcriber.transcribe_array(np.zeros(8000, dtype=np.float32), 16000)
+        except Exception:
+            logger.exception("ASR warm-up failed")
+            return
+        logger.info("ASR warmed up in %.1f s", time.monotonic() - started)
 
     def _transcribe_for_dictation(self, audio, sample_rate: int) -> str:
         """Sync wrapper. Routes through ``asr_executor`` so the GigaAM
@@ -347,6 +372,7 @@ class App:
         logger.info("Freed %.1f MB from %s", bytes_freed / 1024 / 1024, tmp)
 
     def _quit(self) -> None:
+        self._quitting = True
         # Tearing the root down here triggers the ``finally`` in ``run``.
         try:
             self.root.quit()
@@ -411,6 +437,17 @@ class App:
             pass
 
         logger.info("Shutdown complete")
+
+        # 5. The executor's worker isn't a daemon, so Python would wait for
+        # a running warm-up (up to ~30 s) before exiting. Nothing else is
+        # in it — queued calls were cancelled above — so don't wait. Only
+        # on a normal quit (a crash must still surface) and only with the
+        # model already cached: gigaam downloads straight into the final
+        # .ckpt, and killing that leaves a truncated file that fails the
+        # checksum on every later launch.
+        if self._quitting and self._model_cached and not self._warm_up.done():
+            logging.shutdown()
+            os._exit(0)
 
 
 # --- helpers ---------------------------------------------------------------
