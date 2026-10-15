@@ -351,10 +351,26 @@
 - `clean_dictation_text` убирает звуки-заминки: «э», «э-э-э», «эм», «мм», «м-м», «а-а» вместе с приклеенной пунктуацией; после заминки в начале предложения следующее слово с большой буквы ([desktop/dictation.py](../desktop/dictation.py)). Одиночное «а», «ну», «вот» не трогаются. Транскриптор не фильтруется.
 - 204 теста.
 
-### «Живые субтитры» в трее (ветка feature/live-subtitles)
+### «Живые субтитры» в трее (v1.0.11)
 
 - Приложение live-subtitles (системный звук WASAPI loopback + микрофон → Deepgram → перевод DeepSeek) перенесено одним модулем [desktop/live_subtitles.py](../desktop/live_subtitles.py), логика без рефакторинга. Убрано своё: `tk.Tk()`/`mainloop`, argparse, `.env`, подмена путей Tcl, установка в `%LOCALAPPDATA%`, ярлыки и «Удалить приложение».
 - Точка входа `open_window(parent)`: `tk.Toplevel` от корня VoiceType, одно окно (повторный клик поднимает). Закрытие окна останавливает свои потоки и сокеты Deepgram и не трогает VoiceType; повторное открытие запускает всё заново. Журнал и настройки субтитров — `data/live_subtitles.log` и `data/live_subtitles.json`.
 - Трей: пункт «Живые субтитры» под «Транскриптором». Нет ключей — окно с кнопкой «Открыть Настройки». Ключи: `deepgram_api_key`, `deepseek_api_key` в `Settings` и в Настройках.
 - 18 проверок конвейера из `test_pipeline.py` перенесены в [tests/test_live_subtitles.py](../tests/test_live_subtitles.py) + жизненный цикл окна. В `requirements.txt`: `numpy`, `soundcard`, `deepgram-sdk`; в `VoiceTypeStudio.spec`: `collect_all` для них и `cffi`.
 - `deps.txt` не пересчитывался: новые библиотеки в `_internal` меняют отпечаток, он считается `tools/make_release.py` после сборки.
+- Окно субтитров со своей иконкой (`assets/live_subtitles.ico`), а не роботом VoiceType.
+
+### Прочее в v1.0.11
+
+- Меню трея без заголовка «VoiceType Studio»: он подсвечивался при наведении, как кнопка ([desktop/tray.py](../desktop/tray.py)).
+- Прогрев GigaAM при старте и новое окно «О программе» (коммиты с другой машины, см. `memory/project_next_release_backlog.md`).
+- `Update.bat`: curl обрывает зависшее скачивание (`--speed-limit 1024 --speed-time 30`, `--retry 3`), `deps.txt` — `--max-time 60`. Работает со следующего обновления: при обновлении на 1.0.11 запускается .bat из установленной версии.
+- 232 теста.
+- Окно субтитров со своей иконкой (`assets/live_subtitles.ico`), не роботом.
+
+### Мелочи v1.0.11
+
+- Меню трея без заголовка «VoiceType Studio»: он подсвечивался при наведении, как кнопка ([desktop/tray.py](../desktop/tray.py)).
+- Прогрев GigaAM при старте и новое окно «О программе» (коммиты с другой машины, влиты перед релизом).
+- `VoiceTypeStudio-Update.bat`: curl обрывает скачивание при скорости < 1 КБ/с дольше 30 с и пробует заново (до 3 раз); `deps.txt` качается не дольше 60 с. Раньше обновление могло висеть вечно на оборванном соединении.
+- 232 теста.
