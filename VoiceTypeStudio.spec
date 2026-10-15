@@ -20,6 +20,8 @@ datas = [
     ('assets/icon.ico', 'assets'),
     ('assets/icon_64.png', 'assets'),
     ('assets/icon_256.png', 'assets'),
+    # Own icon for the «Живые субтитры» window.
+    ('assets/live_subtitles.ico', 'assets'),
     # Update script — «Обновить» in Настройки copies it to TEMP and runs it.
     ('tools/VoiceTypeStudio-Update.bat', 'tools'),
 ]

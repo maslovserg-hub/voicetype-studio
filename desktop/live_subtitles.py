@@ -27,7 +27,7 @@ from PIL import Image, ImageDraw, ImageFont, ImageTk
 from deepgram import DeepgramClient
 
 from core import settings as settings_io
-from core.assets import icon_ico_path
+from core.assets import asset_path
 from core.config import config
 
 APP_NAME = "Живые субтитры"
@@ -784,7 +784,7 @@ class App:
         root.attributes("-topmost", self.settings.on_top)
         root.protocol("WM_DELETE_WINDOW", self.quit)
         try:
-            root.iconbitmap(icon_ico_path())
+            root.iconbitmap(asset_path("live_subtitles.ico"))
         except tk.TclError:
             pass  # без иконки жить можно
 
