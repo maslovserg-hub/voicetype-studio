@@ -72,3 +72,20 @@ def test_api_key_helpers() -> None:
     assert s.has_api_key("openai") is True
     assert s.has_api_key("perplexity") is False
     assert s.has_api_key("gemini") is False
+
+
+def test_live_subtitles_keys_roundtrip(tmp_path) -> None:
+    assert Settings().deepgram_api_key == ""
+    assert Settings().deepseek_api_key == ""
+
+    target = tmp_path / "settings.json"
+    settings_io.save(
+        Settings(deepgram_api_key="dg-test", deepseek_api_key="ds-test"), target,
+    )
+    raw = json.loads(target.read_text(encoding="utf-8"))
+    assert raw["deepgram_api_key"] == "dg-test"
+    assert raw["deepseek_api_key"] == "ds-test"
+
+    restored = settings_io.load(target)
+    assert restored.deepgram_api_key == "dg-test"
+    assert restored.deepseek_api_key == "ds-test"

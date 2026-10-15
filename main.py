@@ -142,11 +142,13 @@ class App:
 
         self._transcriptor: Optional[TranscriptorWindow] = None
         self._about_window = None  # CTkToplevel | None
+        self._live_keys_dialog = None  # CTkToplevel | None
 
         self.tray = build_tray(
             on_open_transcriptor=self._open_transcriptor_safe,
             on_quit=self._quit_safe,
             on_open_settings=self._open_settings_safe,
+            on_open_live_subtitles=self._open_live_subtitles_safe,
             on_about=self._open_about_safe,
         )
 
@@ -209,6 +211,9 @@ class App:
     def _open_settings_safe(self) -> None:
         self.root.after(0, self._open_settings)
 
+    def _open_live_subtitles_safe(self) -> None:
+        self.root.after(0, self._open_live_subtitles)
+
     def _open_about_safe(self) -> None:
         self.root.after(0, self._open_about)
 
@@ -241,6 +246,62 @@ class App:
             on_open_data_folder=self._open_data_folder,
             on_clean_temp=self._clean_temp_files,
         )
+
+    def _open_live_subtitles(self) -> None:
+        if not (self.settings.deepgram_api_key.strip()
+                and self.settings.deepseek_api_key.strip()):
+            self._show_live_keys_dialog()
+            return
+        try:
+            # Imported lazily: soundcard / deepgram are only needed here and
+            # soundcard initialises COM at import time.
+            from desktop import live_subtitles
+
+            live_subtitles.open_window(
+                self.root,
+                deepgram_key=self.settings.deepgram_api_key,
+                deepseek_key=self.settings.deepseek_api_key,
+            )
+        except Exception:
+            logger.exception("Failed to open live subtitles")
+
+    def _show_live_keys_dialog(self) -> None:
+        existing = self._live_keys_dialog
+        if existing is not None and _winfo_alive(existing):
+            existing.lift()
+            existing.focus_force()
+            return
+        from desktop._icons import apply_app_icon
+
+        dialog = ctk.CTkToplevel(self.root)
+        dialog.title("Живые субтитры")
+        dialog.geometry("380x150")
+        dialog.resizable(False, False)
+        apply_app_icon(dialog)
+        ctk.CTkLabel(
+            dialog, text="Нужны ключи Deepgram и DeepSeek",
+            font=ctk.CTkFont(size=15, weight="bold"),
+        ).pack(padx=20, pady=(24, 4))
+        ctk.CTkLabel(
+            dialog, text="Вставьте их в Настройках.", text_color="gray70",
+        ).pack(padx=20)
+        buttons = ctk.CTkFrame(dialog, fg_color="transparent")
+        buttons.pack(pady=(18, 0))
+
+        def _to_settings() -> None:
+            dialog.destroy()
+            self._open_settings()
+
+        ctk.CTkButton(
+            buttons, text="Открыть Настройки", width=150, command=_to_settings,
+        ).pack(side="left", padx=4)
+        ctk.CTkButton(
+            buttons, text="Закрыть", width=90, fg_color="gray30",
+            hover_color="gray25", command=dialog.destroy,
+        ).pack(side="left", padx=4)
+        self._live_keys_dialog = dialog
+        dialog.lift()
+        dialog.focus_force()
 
     def _open_about(self) -> None:
         if self._about_window is not None and _winfo_alive(self._about_window):
@@ -342,6 +403,15 @@ class App:
             self.tray.stop()
         except Exception:
             pass
+
+        # 1b. close the live-subtitles window (if it was ever opened) so its
+        # capture threads and paid Deepgram sockets stop cleanly
+        live = sys.modules.get("desktop.live_subtitles")
+        if live is not None:
+            try:
+                live.shutdown()
+            except Exception:
+                pass
 
         # 2. drain the asyncio loop
         try:

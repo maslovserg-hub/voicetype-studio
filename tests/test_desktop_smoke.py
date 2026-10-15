@@ -132,7 +132,7 @@ def test_tray_menu_has_single_transcriptor_entry() -> None:
 
 def test_tray_menu_full_shape() -> None:
     """With every callback wired (as main.py does), the tray menu matches
-    the spec exactly: title / Транскриптор / Настройки / Автозапуск /
+    the spec exactly: Транскриптор / Настройки / Автозапуск /
     О программе / Выход — and never «Папка с данными» or «Очистить
     временные файлы», which moved into Settings → Обслуживание."""
     from desktop.tray import build_tray
@@ -146,7 +146,6 @@ def test_tray_menu_full_shape() -> None:
     )
     texts = [item.text for item in icon.menu.items if item.text]
     for expected in (
-        "VoiceType Studio",
         "Транскриптор",
         "Настройки",
         "Запускать с Windows",
@@ -154,8 +153,25 @@ def test_tray_menu_full_shape() -> None:
         "Выход",
     ):
         assert expected in texts, texts
-    for gone in ("Папка с данными", "Очистить временные файлы"):
+    for gone in ("VoiceType Studio", "Папка с данными", "Очистить временные файлы"):
         assert gone not in texts
+
+
+def test_tray_menu_live_subtitles_right_after_transcriptor() -> None:
+    """«Живые субтитры» — отдельный пункт сразу под «Транскриптором»;
+    без колбэка пункта нет."""
+    from desktop.tray import build_tray
+
+    noop = lambda: None  # noqa: E731
+    icon = build_tray(
+        on_open_transcriptor=noop, on_quit=noop,
+        on_open_settings=noop, on_open_live_subtitles=noop,
+    )
+    texts = [item.text for item in icon.menu.items if item.text]
+    assert texts.index("Живые субтитры") == texts.index("Транскриптор") + 1, texts
+
+    bare = build_tray(on_open_transcriptor=noop, on_quit=noop)
+    assert "Живые субтитры" not in [i.text for i in bare.menu.items if i.text]
 
 
 def test_dictation_watchdog_reopens_dead_stream() -> None:

@@ -52,7 +52,7 @@ echo   Закрываю программу...
 rem deps.txt fingerprints the libraries in _internal. If the new release
 rem has the same ones as this install, only the small zip (exe + what
 rem changes with it) is needed, not the full 220 MB.
-"%CURL%" -L --fail -s -o "%DEPS%" "%DEPS_URL%"
+"%CURL%" -L --fail -s --max-time 60 -o "%DEPS%" "%DEPS_URL%"
 if not errorlevel 1 if exist "%DIR%\deps.txt" (
     "%SYS%\fc.exe" /b "%DEPS%" "%DIR%\deps.txt" >nul 2>&1 && (
         set "URL=%SMALL_URL%"
@@ -63,7 +63,7 @@ del "%DEPS%" >nul 2>&1
 
 echo   Скачиваю новую версию, %SIZE%...
 echo.
-"%CURL%" -L --fail --retry 2 -o "%ZIP%" "%URL%"
+"%CURL%" -L --fail --retry 3 --speed-limit 1024 --speed-time 30 -o "%ZIP%" "%URL%"
 if errorlevel 1 (
     echo.
     echo   Не удалось скачать. Проверьте интернет и попробуйте снова.
