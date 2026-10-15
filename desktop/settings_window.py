@@ -142,6 +142,18 @@ class SettingsPanel(ctk.CTkFrame):
         self._speechkit_entry.pack(fill="x", pady=(0, 8))
         attach_clipboard_menu(self._speechkit_entry)
 
+        _row_label(parent, "Ключ Deepgram (Живые субтитры)")
+        self._deepgram_entry = ctk.CTkEntry(parent, show="*")
+        self._deepgram_entry.insert(0, s.deepgram_api_key or "")
+        self._deepgram_entry.pack(fill="x", pady=(0, 8))
+        attach_clipboard_menu(self._deepgram_entry)
+
+        _row_label(parent, "Ключ DeepSeek (Живые субтитры)")
+        self._deepseek_entry = ctk.CTkEntry(parent, show="*")
+        self._deepseek_entry.insert(0, s.deepseek_api_key or "")
+        self._deepseek_entry.pack(fill="x", pady=(0, 8))
+        attach_clipboard_menu(self._deepseek_entry)
+
     def _build_download_section(self, parent, s: Settings) -> None:
         _section_header(parent, "Скачивание")
         _row_label(parent, "Папка для кнопки «Скачать» (пусто — «Загрузки»)")
@@ -251,6 +263,8 @@ class SettingsPanel(ctk.CTkFrame):
             api_keys=api_keys,
             download_dir=self._download_dir_entry.get().strip(),
             speechkit_api_key=self._speechkit_entry.get().strip(),
+            deepgram_api_key=self._deepgram_entry.get().strip(),
+            deepseek_api_key=self._deepseek_entry.get().strip(),
         )
 
 

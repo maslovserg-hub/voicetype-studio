@@ -35,6 +35,10 @@ class Settings:
     # Yandex SpeechKit API key — speech recognition for the «Другой»
     # language mode (GigaAM is Russian-only).
     speechkit_api_key: str = ""
+    # Deepgram (streaming recognition) and DeepSeek (translation) keys for
+    # «Живые субтитры». DeepSeek lives only inside that module, not in core/llm.
+    deepgram_api_key: str = ""
+    deepseek_api_key: str = ""
 
     def api_key_for(self, provider: str) -> str:
         return (self.api_keys.get(provider) or "").strip()

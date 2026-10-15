@@ -167,3 +167,23 @@ def test_settings_window_has_no_telegram_section(ctk_root) -> None:
     assert "Telegram-бот" not in texts
     assert "YouTube" not in texts
     assert not any("Озвучка" in t for t in texts if isinstance(t, str))
+
+
+def test_settings_window_collects_live_subtitles_keys(ctk_root) -> None:
+    """Ключи Deepgram / DeepSeek вводятся в Настройках и попадают в Settings."""
+    from desktop.settings_window import SettingsPanel
+
+    win = SettingsPanel(
+        ctk_root,
+        settings=_make_settings(deepgram_api_key="dg-old"),
+        on_save=lambda s: None,
+    )
+    texts = _all_widget_texts(win)
+    assert "Ключ Deepgram (Живые субтитры)" in texts
+    assert "Ключ DeepSeek (Живые субтитры)" in texts
+    assert win._deepgram_entry.get() == "dg-old"
+
+    win._deepseek_entry.insert(0, "  ds-new  ")
+    collected = win._collect()
+    assert collected.deepgram_api_key == "dg-old"
+    assert collected.deepseek_api_key == "ds-new"
