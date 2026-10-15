@@ -82,8 +82,6 @@ def build_tray(
             return False
 
     items = [
-        pystray.MenuItem("VoiceType Studio", None, enabled=False),
-        pystray.Menu.SEPARATOR,
         pystray.MenuItem("Транскриптор", _wrap(on_open_transcriptor), default=True),
     ]
     if on_open_live_subtitles is not None:

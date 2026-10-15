@@ -132,7 +132,7 @@ def test_tray_menu_has_single_transcriptor_entry() -> None:
 
 def test_tray_menu_full_shape() -> None:
     """With every callback wired (as main.py does), the tray menu matches
-    the spec exactly: title / Транскриптор / Настройки / Автозапуск /
+    the spec exactly: Транскриптор / Настройки / Автозапуск /
     О программе / Выход — and never «Папка с данными» or «Очистить
     временные файлы», which moved into Settings → Обслуживание."""
     from desktop.tray import build_tray
@@ -146,7 +146,6 @@ def test_tray_menu_full_shape() -> None:
     )
     texts = [item.text for item in icon.menu.items if item.text]
     for expected in (
-        "VoiceType Studio",
         "Транскриптор",
         "Настройки",
         "Запускать с Windows",
@@ -154,7 +153,7 @@ def test_tray_menu_full_shape() -> None:
         "Выход",
     ):
         assert expected in texts, texts
-    for gone in ("Папка с данными", "Очистить временные файлы"):
+    for gone in ("VoiceType Studio", "Папка с данными", "Очистить временные файлы"):
         assert gone not in texts
 
 
