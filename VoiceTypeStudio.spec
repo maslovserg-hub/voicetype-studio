@@ -34,6 +34,9 @@ hiddenimports = [
     'sentencepiece',
     'hydra._internal.utils',
     'hydra._internal.instantiate._internal.utils',
+    # soundcard builds its WASAPI bindings through cffi at import time.
+    'cffi',
+    '_cffi_backend',
 ]
 
 
@@ -59,6 +62,11 @@ _collect('tkinterdnd2')
 # Async HTTP stack.
 _collect('aiohttp')
 _collect('aiofiles')
+
+# Live subtitles — soundcard carries mediafoundation.py.h (cffi cdef) as data,
+# deepgram loads its sub-packages lazily.
+_collect('soundcard')
+_collect('deepgram')
 
 # Media.
 _collect('pydub')

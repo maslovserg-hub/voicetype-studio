@@ -1,7 +1,7 @@
 """System-tray icon and right-click menu.
 
-The menu stays short: Транскриптор, Настройки, Автозапуск (toggle),
-О программе, Выход. Data-folder / temp-cleanup helpers moved into the
+The menu stays short: Транскриптор, Живые субтитры, Настройки, Автозапуск
+(toggle), О программе, Выход. Data-folder / temp-cleanup helpers moved into the
 Settings window's «Обслуживание» section — the tray no longer exposes them
 directly.
 
@@ -49,6 +49,7 @@ def build_tray(
     on_open_transcriptor: Callable[[], None],
     on_quit: Callable[[], None],
     on_open_settings: Callable[[], None] | None = None,
+    on_open_live_subtitles: Callable[[], None] | None = None,
     on_about: Callable[[], None] | None = None,
 ):
     """Build a configured ``pystray.Icon``. Caller invokes ``.run_detached()``.
@@ -85,6 +86,8 @@ def build_tray(
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("Транскриптор", _wrap(on_open_transcriptor), default=True),
     ]
+    if on_open_live_subtitles is not None:
+        items.append(pystray.MenuItem("Живые субтитры", _wrap(on_open_live_subtitles)))
     if on_open_settings is not None:
         items.append(pystray.MenuItem("Настройки", _wrap(on_open_settings)))
     items.extend(

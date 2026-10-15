@@ -33,6 +33,8 @@ def test_main_module_imports() -> None:
         "_open_settings_safe",
         "_open_about",
         "_open_about_safe",
+        "_open_live_subtitles",
+        "_open_live_subtitles_safe",
         "_on_settings_saved",
         "_transcribe_for_dictation",
         "_quit",

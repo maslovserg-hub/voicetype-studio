@@ -7,6 +7,12 @@ torchaudio>=2.0.0
 pydub>=0.25.1
 sounddevice>=0.4.6
 
+# Live subtitles (desktop/live_subtitles.py): WASAPI loopback capture +
+# Deepgram streaming recognition. DeepSeek translation uses urllib only.
+numpy>=1.24
+soundcard>=0.4.6
+deepgram-sdk>=7.7.0
+
 # Downloads
 yt-dlp>=2024.1.1
 yt-dlp-ejs>=0.8.0      # JS solver for YouTube n-sig challenge (needs node.js in PATH)

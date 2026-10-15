@@ -350,3 +350,11 @@
 
 - `clean_dictation_text` убирает звуки-заминки: «э», «э-э-э», «эм», «мм», «м-м», «а-а» вместе с приклеенной пунктуацией; после заминки в начале предложения следующее слово с большой буквы ([desktop/dictation.py](../desktop/dictation.py)). Одиночное «а», «ну», «вот» не трогаются. Транскриптор не фильтруется.
 - 204 теста.
+
+### «Живые субтитры» в трее (ветка feature/live-subtitles)
+
+- Приложение live-subtitles (системный звук WASAPI loopback + микрофон → Deepgram → перевод DeepSeek) перенесено одним модулем [desktop/live_subtitles.py](../desktop/live_subtitles.py), логика без рефакторинга. Убрано своё: `tk.Tk()`/`mainloop`, argparse, `.env`, подмена путей Tcl, установка в `%LOCALAPPDATA%`, ярлыки и «Удалить приложение».
+- Точка входа `open_window(parent)`: `tk.Toplevel` от корня VoiceType, одно окно (повторный клик поднимает). Закрытие окна останавливает свои потоки и сокеты Deepgram и не трогает VoiceType; повторное открытие запускает всё заново. Журнал и настройки субтитров — `data/live_subtitles.log` и `data/live_subtitles.json`.
+- Трей: пункт «Живые субтитры» под «Транскриптором». Нет ключей — окно с кнопкой «Открыть Настройки». Ключи: `deepgram_api_key`, `deepseek_api_key` в `Settings` и в Настройках.
+- 18 проверок конвейера из `test_pipeline.py` перенесены в [tests/test_live_subtitles.py](../tests/test_live_subtitles.py) + жизненный цикл окна. В `requirements.txt`: `numpy`, `soundcard`, `deepgram-sdk`; в `VoiceTypeStudio.spec`: `collect_all` для них и `cffi`.
+- `deps.txt` не пересчитывался: новые библиотеки в `_internal` меняют отпечаток, он считается `tools/make_release.py` после сборки.

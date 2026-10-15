@@ -158,6 +158,23 @@ def test_tray_menu_full_shape() -> None:
         assert gone not in texts
 
 
+def test_tray_menu_live_subtitles_right_after_transcriptor() -> None:
+    """«Живые субтитры» — отдельный пункт сразу под «Транскриптором»;
+    без колбэка пункта нет."""
+    from desktop.tray import build_tray
+
+    noop = lambda: None  # noqa: E731
+    icon = build_tray(
+        on_open_transcriptor=noop, on_quit=noop,
+        on_open_settings=noop, on_open_live_subtitles=noop,
+    )
+    texts = [item.text for item in icon.menu.items if item.text]
+    assert texts.index("Живые субтитры") == texts.index("Транскриптор") + 1, texts
+
+    bare = build_tray(on_open_transcriptor=noop, on_quit=noop)
+    assert "Живые субтитры" not in [i.text for i in bare.menu.items if i.text]
+
+
 def test_dictation_watchdog_reopens_dead_stream() -> None:
     """Watchdog must reopen a stream whose ``.active`` flipped to False.
 
